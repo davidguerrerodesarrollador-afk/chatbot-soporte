@@ -15,7 +15,8 @@ function getServiceAccountCredentials() {
   }
   const envVar = process.env.SERVICE_ACCOUNT_JSON;
   if (envVar) {
-    return JSON.parse(envVar);
+    const json = Buffer.from(envVar, 'base64').toString('utf-8');
+    return JSON.parse(json);
   }
   return null;
 }
