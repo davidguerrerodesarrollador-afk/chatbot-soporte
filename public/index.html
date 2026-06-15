@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard Administrador - G-Chat Support Bot</title>
+  <!-- Google Fonts & FontAwesome -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Login Modal Overlay -->
+  <div id="login-overlay" class="overlay">
+    <div class="glass-panel login-card">
+      <div class="brand-header">
+        <div class="logo-glow">
+          <i class="fa-solid fa-robot logo-icon"></i>
+        </div>
+        <h2>G-Chat Support Hub</h2>
+        <p>Panel de Administración y Control</p>
+      </div>
+      <form id="login-form">
+        <div class="input-group">
+          <label for="admin-password">Contraseña del Administrador</label>
+          <div class="input-wrapper">
+            <i class="fa-solid fa-lock input-icon"></i>
+            <input type="password" id="admin-password" placeholder="Ingresa la contraseña" required>
+          </div>
+        </div>
+        <button type="submit" id="btn-login" class="btn btn-primary btn-block">
+          <span>Acceder al Panel</span> <i class="fa-solid fa-arrow-right"></i>
+        </button>
+        <p id="login-error" class="error-msg hide">Contraseña incorrecta. Inténtalo de nuevo.</p>
+      </form>
+    </div>
+  </div>
+
+  <!-- Main Dashboard App -->
+  <div id="app-container" class="app-layout hide">
+    
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar glass-panel">
+      <div class="sidebar-brand">
+        <i class="fa-solid fa-robot logo-icon-small"></i>
+        <h2>G-Chat Bot</h2>
+      </div>
+      <nav class="sidebar-menu">
+        <a href="#" class="menu-item active" data-tab="tab-overview">
+          <i class="fa-solid fa-chart-simple"></i> Resumen
+        </a>
+        <a href="#" class="menu-item" data-tab="tab-documents">
+          <i class="fa-solid fa-folder-open"></i> Documentos
+        </a>
+        <a href="#" class="menu-item" data-tab="tab-playground">
+          <i class="fa-solid fa-comments"></i> Playground
+        </a>
+        <a href="#" class="menu-item" data-tab="tab-logs">
+          <i class="fa-solid fa-receipt"></i> Historial de Consultas
+        </a>
+      </nav>
+      <div class="sidebar-footer">
+        <button id="btn-logout" class="btn btn-logout">
+          <i class="fa-solid fa-right-from-bracket"></i> Cerrar Sesión
+        </button>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+      
+      <!-- Top Navigation/Header Bar -->
+      <header class="header-bar glass-panel">
+        <div class="header-info">
+          <h1 id="page-title">Panel de Control</h1>
+          <p id="folder-status-sub">Carpeta de Drive ID: <span id="drive-folder-badge" class="badge">Cargando...</span></p>
+        </div>
+        <div class="header-actions">
+          <button id="btn-sync-now" class="btn btn-gradient">
+            <i class="fa-solid fa-arrows-rotate" id="sync-icon"></i>
+            <span id="sync-text">Sincronizar Drive</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- View: Overview -->
+      <section id="tab-overview" class="tab-content active">
+        <!-- Metrics Cards Grid -->
+        <div class="metrics-grid">
+          <div class="metric-card glass-panel card-glow-indigo">
+            <div class="metric-header">
+              <span class="metric-title">Documentos Synced</span>
+              <div class="metric-icon bg-indigo"><i class="fa-solid fa-file-invoice"></i></div>
+            </div>
+            <div class="metric-body">
+              <span class="metric-val" id="metric-docs">0</span>
+              <span class="metric-sub">Archivos activos en memoria</span>
+            </div>
+          </div>
+
+          <div class="metric-card glass-panel card-glow-purple">
+            <div class="metric-header">
+              <span class="metric-title">Consultas Totales</span>
+              <div class="metric-icon bg-purple"><i class="fa-solid fa-message"></i></div>
+            </div>
+            <div class="metric-body">
+              <span class="metric-val" id="metric-queries">0</span>
+              <span class="metric-sub">Preguntas resueltas por el bot</span>
+            </div>
+          </div>
+
+          <div class="metric-card glass-panel card-glow-cyan">
+            <div class="metric-header">
+              <span class="metric-title">Estado de Sincronización</span>
+              <div class="metric-icon bg-cyan"><i class="fa-solid fa-rotate"></i></div>
+            </div>
+            <div class="metric-body">
+              <span class="metric-val text-green" id="metric-status">Listo</span>
+              <span class="metric-sub" id="metric-sync-time">Último: Nunca</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Overview Split Layout -->
+        <div class="split-grid">
+          <!-- Recent Documents Card -->
+          <div class="split-card glass-panel flex-column">
+            <div class="card-header">
+              <h3><i class="fa-solid fa-file-lines text-indigo"></i> Documentos Recientes</h3>
+              <a href="#" class="view-all-link" data-go-tab="tab-documents">Ver Todos</a>
+            </div>
+            <div class="table-container scrollable-table">
+              <table id="recent-docs-table">
+                <thead>
+                  <tr>
+                    <th>Nombre del Archivo</th>
+                    <th>Tipo</th>
+                    <th>Tamaño</th>
+                  </tr>
+                </thead>
+                <tbody id="recent-docs-tbody">
+                  <tr>
+                    <td colspan="3" class="text-center text-muted">No hay documentos sincronizados</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Quick Test Playground Card -->
+          <div class="split-card glass-panel flex-column">
+            <div class="card-header">
+              <h3><i class="fa-solid fa-paper-plane text-purple"></i> Probar Chatbot (Playground)</h3>
+              <a href="#" class="view-all-link" data-go-tab="tab-playground">Pantalla Completa</a>
+            </div>
+            <div class="mini-chat-preview flex-column">
+              <div class="chat-messages" id="mini-chat-messages">
+                <div class="chat-bubble bot">
+                  <div class="bubble-content">
+                    Hola admin. ¿Quieres probar cómo respondo a tus preguntas sobre las máquinas? Escríbeme aquí abajo.
+                  </div>
+                </div>
+              </div>
+              <div class="mini-chat-input-wrapper">
+                <input type="text" id="mini-chat-input" placeholder="Pregunta sobre una máquina o manual...">
+                <button id="btn-mini-send" class="btn btn-indigo btn-square"><i class="fa-solid fa-paper-plane"></i></button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- View: Documents Manager -->
+      <section id="tab-documents" class="tab-content hide">
+        <div class="glass-panel table-card flex-column">
+          <div class="card-header border-bottom">
+            <div>
+              <h3>Directorio de Conocimiento</h3>
+              <p class="text-muted">Lista completa de documentos e imágenes que alimentan la memoria del bot. Sube archivos a la carpeta del Drive del Administrador para verlos aquí al sincronizar.</p>
+            </div>
+            <div class="search-bar">
+              <i class="fa-solid fa-magnifying-glass"></i>
+              <input type="text" id="doc-search" placeholder="Filtrar archivos por nombre...">
+            </div>
+          </div>
+          <div class="table-container full-table">
+            <table id="docs-table">
+              <thead>
+                <tr>
+                  <th>Nombre del Archivo</th>
+                  <th>Tipo MIME</th>
+                  <th>Tamaño</th>
+                  <th>Última Modificación Drive</th>
+                  <th>Sincronizado el</th>
+                  <th class="text-right">Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="docs-tbody">
+                <!-- Filled dynamically -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- View: Full Chat Playground -->
+      <section id="tab-playground" class="tab-content hide">
+        <div class="playground-layout">
+          <!-- Chat Window -->
+          <div class="glass-panel chat-window flex-column">
+            <div class="chat-header">
+              <div class="bot-avatar">
+                <i class="fa-solid fa-robot"></i>
+              </div>
+              <div class="chat-header-title">
+                <h3>Playground del Asistente</h3>
+                <p class="text-green"><span class="dot"></span> Chatbot Activo</p>
+              </div>
+            </div>
+            <div class="chat-messages full-chat" id="play-chat-messages">
+              <div class="chat-bubble bot">
+                <div class="bubble-content">
+                  ¡Hola! Soy tu chatbot de mantenimiento de máquinas. Pregúntame sobre cualquier máquina o error que venga en la documentación del Drive.
+                </div>
+              </div>
+            </div>
+            <div class="chat-input-area border-top">
+              <input type="text" id="play-chat-input" placeholder="Escribe tu consulta sobre alguna máquina...">
+              <button id="btn-play-send" class="btn btn-gradient">
+                <span>Enviar</span> <i class="fa-solid fa-paper-plane"></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- Context & Sources Sidebar -->
+          <div class="glass-panel sources-panel flex-column">
+            <div class="sources-header">
+              <h3><i class="fa-solid fa-magnifying-glass-chart"></i> Recuperación RAG</h3>
+              <p class="text-muted">Fuentes y relevancia en la última pregunta</p>
+            </div>
+            <div class="sources-body" id="playground-sources">
+              <div class="text-muted text-center py-4">Haz una pregunta para ver las fuentes utilizadas por el RAG.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- View: Chat History Logs -->
+      <section id="tab-logs" class="tab-content hide">
+        <div class="glass-panel table-card flex-column">
+          <div class="card-header border-bottom">
+            <div>
+              <h3>Registro de Consultas de Usuarios</h3>
+              <p class="text-muted">Auditoría en tiempo real de todas las preguntas de los usuarios en Google Chat y en el Playground, junto con sus respuestas y referencias.</p>
+            </div>
+          </div>
+          <div class="table-container full-table">
+            <table id="logs-table">
+              <thead>
+                <tr>
+                  <th>Fecha/Hora</th>
+                  <th>Plataforma</th>
+                  <th>Usuario</th>
+                  <th>Pregunta</th>
+                  <th>Respuesta</th>
+                  <th>Fuentes RAG</th>
+                </tr>
+              </thead>
+              <tbody id="logs-tbody">
+                <!-- Filled dynamically -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- Document Summary Modal -->
+  <div id="summary-modal" class="overlay">
+    <div class="glass-panel modal-card">
+      <div class="modal-header">
+        <div class="modal-title-wrapper">
+          <i class="fa-solid fa-file-lines text-indigo"></i>
+          <h3 id="modal-filename">Nombre_Archivo.pdf</h3>
+        </div>
+        <button id="btn-close-modal" class="btn btn-close"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="modal-body" id="modal-summary-content">
+        <!-- Render summary -->
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js" type="module"></script>
+</body>
+</html>
