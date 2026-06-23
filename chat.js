@@ -212,12 +212,12 @@ export async function handleChatMessage(eventBody) {
 
     console.log(`[Google Chat] Message from ${senderName}: "${question.substring(0, 100)}" with ${attachments.length} attachment(s), space: ${spaceName}`);
 
-    // Process and return synchronously
+    // Try async Chat API first, respond immediately so no timeout
     if (question.trim() || attachments.length > 0) {
-      await processMessage(question, attachments, senderName, senderId, spaceName);
+      processMessage(question, attachments, senderName, senderId, spaceName)
+        .catch(err => console.error('[Chat] Async error:', err));
     }
 
-    // Return processing message (Chat API will send the real answer if it works)
     return { text: 'Procesando tu consulta...' };
   }
 
