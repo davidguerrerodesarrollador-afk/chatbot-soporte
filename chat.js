@@ -145,15 +145,17 @@ export async function verifyGoogleChatToken(req, res, next) {
     const payload = ticket.getPayload();
     const chatIssuer = 'chat@system.gserviceaccount.com';
 
+    console.log('[Chat] JWT payload iss:', payload.iss, 'aud:', payload.aud, 'email_verified:', payload.email_verified);
+
     if (payload.iss === chatIssuer) {
       req.googleChatPayload = payload;
       return next();
     } else {
-      console.warn('JWT verification failed: Issuer is not Google Chat.');
+      console.warn('JWT verification failed: Issuer is not Google Chat. Expected:', chatIssuer, 'Got:', payload.iss);
       return res.status(401).json({ error: 'Unauthorized: Invalid token issuer' });
     }
   } catch (error) {
-    console.error('JWT validation error:', error.message);
+    console.error('JWT validation error:', error.message, error.stack);
     return res.status(401).json({ error: 'Unauthorized: Token validation failed' });
   }
 }
