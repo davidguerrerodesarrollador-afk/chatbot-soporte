@@ -25,6 +25,25 @@ function getServiceAccountCredentials() {
   throw new Error('Service account not found. Set service-account.json or SERVICE_ACCOUNT_JSON env var.');
 }
 
+// Send a message to a Google Chat space using the Chat API
+async function sendChatMessage(spaceName, text) {
+  const key = getServiceAccountCredentials();
+  const jwtClient = new JWT({
+    email: key.client_email,
+    key: key.private_key,
+    scopes: ['https://www.googleapis.com/auth/chat.bot'],
+  });
+  await jwtClient.authorize();
+
+  const url = `https://chat.googleapis.com/v1/${spaceName}/messages`;
+  await jwtClient.request({
+    url,
+    method: 'POST',
+    data: { text },
+  });
+  console.log(`[Chat] Message sent to space: ${spaceName}`);
+}
+
 // Download a Google Chat attachment using the service account
 async function downloadChatAttachment(sourceUrl, outputPath) {
   const key = getServiceAccountCredentials();
@@ -45,7 +64,7 @@ async function downloadChatAttachment(sourceUrl, outputPath) {
 /**
  * Process the user's question message, optionally with attached images/videos.
  */
-async function processMessage(question, attachments, senderName, senderId) {
+async function processMessage(question, attachments, senderName, senderId, spaceName) {
   const tempDir = join(__dirname, 'temp');
   if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
 
@@ -110,16 +129,10 @@ async function processMessage(question, attachments, senderName, senderId) {
       responseText += `\n\nNota: No encontré información específica en los manuales de Drive relacionada con lo que enviaste.`;
     }
 
-    return {
-      cardsV2: [{
-        cardId: 'respuesta',
-        card: {
-          sections: [{
-            widgets: [{ textParagraph: { text: responseText } }]
-          }]
-        }
-      }]
-    };
+    // Send via Chat API if space is known
+    if (spaceName) {
+      await sendChatMessage(spaceName, responseText);
+    }
   } finally {
     // Clean up temp files
     for (const p of tempPaths) {
@@ -183,18 +196,26 @@ export async function handleChatMessage(eventBody) {
   const chatData = eventBody.chat;
   if (chatData?.messagePayload?.message) {
     const msg = chatData.messagePayload.message;
+    const space = chatData.messagePayload.space;
     const user = chatData.user;
+    const spaceName = space?.name;
 
     const question = msg.text || '';
     const attachments = msg.attachment || msg.attachments || [];
     const senderName = user?.displayName || 'Usuario de Google Chat';
     const senderId = user?.name || 'unknown';
 
-    console.log(`[Google Chat] Message from ${senderName}: "${question.substring(0, 100)}" with ${attachments.length} attachment(s)`);
+    console.log(`[Google Chat] Message from ${senderName}: "${question.substring(0, 100)}" with ${attachments.length} attachment(s), space: ${spaceName}`);
 
-    if (!question.trim() && attachments.length === 0) {
-      return { text: 'No he recibido ningún texto ni archivo. ¿En qué puedo ayudarte?' };
+    // Process async so server responds immediately
+    if (question.trim() || attachments.length > 0) {
+      processMessage(question, attachments, senderName, senderId, spaceName)
+        .then(() => console.log('[Chat] Async processing complete'))
+        .catch(err => console.error('[Chat] Async processing error:', err));
     }
+
+    return null;
+  }
 
     if (!question.trim() && attachments.length === 0) {
       return { text: 'No he recibido ningún texto ni archivo.' };
