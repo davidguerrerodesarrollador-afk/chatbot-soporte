@@ -79,7 +79,9 @@ function verifyAdmin(req, res, next) {
 // ----------------------------------------------------
 app.post('/api/chat', verifyGoogleChatToken, async (req, res) => {
   try {
-    console.log('[Server] Chat content-type:', req.headers['content-type'], 'body:', JSON.stringify(req.body).substring(0, 300));
+    console.log('[Server] Chat content-type:', req.headers['content-type']);
+    console.log('[Server] Chat body keys:', Object.keys(req.body || {}));
+    console.log('[Server] Chat body full:', JSON.stringify(req.body, null, 2));
     const response = await handleChatMessage(req.body);
     console.log('[Server] handleChatMessage returned:', response ? 'response object' : 'null');
     if (response) {
