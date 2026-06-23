@@ -93,6 +93,15 @@ async function downloadChatAttachment(sourceUrl, outputPath) {
  * Process the user's question message, optionally with attached images/videos.
  */
 async function processMessage(question, attachments, senderName, senderId, spaceName) {
+  // Send "Procesando información..." immediately via Chat API
+  if (spaceName) {
+    try {
+      await sendChatMessage(spaceName, '🔍 Procesando información...');
+    } catch (e) {
+      console.log('[Chat] Failed to send initial message:', e.message);
+    }
+  }
+
   const tempDir = join(__dirname, 'temp');
   if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
 
@@ -155,6 +164,15 @@ async function processMessage(question, attachments, senderName, senderId, space
     }
     if (mediaParts.length > 0 && relevantFiles.length === 0) {
       responseText += `\n\nNota: No encontré información específica en los manuales de Drive relacionada con lo que enviaste.`;
+    }
+
+    // Send answer via Chat API
+    if (spaceName) {
+      try {
+        await sendChatMessage(spaceName, responseText);
+      } catch (e) {
+        console.log('[Chat] Failed to send answer:', e.message);
+      }
     }
 
     return { text: responseText };
@@ -232,20 +250,14 @@ export async function handleChatMessage(eventBody) {
 
     console.log(`[Google Chat] Message from ${senderName}: "${question.substring(0, 100)}" with ${attachments.length} attachment(s), space: ${spaceName}`);
 
-    // Process synchronously: return answer directly from webhook
+    // Process asynchronously: answer arrives via Chat API
     if (question.trim() || attachments.length > 0) {
-      try {
-        const result = await processMessage(question, attachments, senderName, senderId);
-        if (result && result.text) {
-          return result;
-        }
-      } catch (err) {
-        console.error('[Chat] Error processing message:', err);
-        return { text: `❌ Error al procesar tu consulta: ${err.message}` };
-      }
+      // Send "Procesando..." immediately via Chat API, then process
+      processMessage(question, attachments, senderName, senderId, spaceName)
+        .catch(err => console.error('[Chat] Async error:', err));
     }
 
-    return { text: '¡Hola! Soy tu Asistente de Soporte Técnico. ¿En qué puedo ayudarte?' };
+    return null;
   }
 
   // Legacy Chat API format: type, message, space, user
