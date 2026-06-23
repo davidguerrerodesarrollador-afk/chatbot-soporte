@@ -25,6 +25,26 @@ function getServiceAccountCredentials() {
   throw new Error('Service account not found. Set service-account.json or SERVICE_ACCOUNT_JSON env var.');
 }
 
+// Send a message to a Google Chat space using the Chat API
+async function sendChatMessage(spaceName, text) {
+  const key = getServiceAccountCredentials();
+  const jwtClient = new JWT({
+    email: key.client_email,
+    key: key.private_key,
+    scopes: ['https://www.googleapis.com/auth/chat.bot'],
+  });
+  await jwtClient.authorize();
+
+  const url = `https://chat.googleapis.com/v1/${spaceName}/messages`;
+  const body = { text };
+  await jwtClient.request({
+    url,
+    method: 'POST',
+    data: body,
+  });
+  console.log(`[Chat] Message sent to space: ${spaceName}`);
+}
+
 // Download a Google Chat attachment using the service account
 async function downloadChatAttachment(sourceUrl, outputPath) {
   const key = getServiceAccountCredentials();
@@ -45,7 +65,7 @@ async function downloadChatAttachment(sourceUrl, outputPath) {
 /**
  * Process the user's question message, optionally with attached images/videos.
  */
-async function processMessage(question, attachments, senderName, senderId) {
+async function processMessage(question, attachments, senderName, senderId, spaceName) {
   const tempDir = join(__dirname, 'temp');
   if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
 
@@ -98,7 +118,7 @@ async function processMessage(question, attachments, senderName, senderId) {
       sources: sourceNames
     });
 
-    // 5. Build response
+    // 5. Build response text
     let responseText = `${answer}`;
     if (relevantFiles.length > 0) {
       responseText += `\n\nFuentes consultadas:\n`;
@@ -110,10 +130,10 @@ async function processMessage(question, attachments, senderName, senderId) {
       responseText += `\n\nNota: No encontré información específica en los manuales de Drive relacionada con lo que enviaste.`;
     }
 
-    return {
-      authorizationAction: {},
-      actionResponse: { type: 'NEW_MESSAGE', message: { text: responseText } }
-    };
+    // 6. Send message via Chat API (async, using service account)
+    if (spaceName) {
+      await sendChatMessage(spaceName, responseText);
+    }
   } finally {
     // Clean up temp files
     for (const p of tempPaths) {
@@ -179,27 +199,24 @@ export async function handleChatMessage(eventBody) {
     const msg = chatData.messagePayload.message;
     const space = chatData.messagePayload.space;
     const user = chatData.user;
+    const spaceName = space?.name;
 
     const question = msg.text || '';
     const attachments = msg.attachment || msg.attachments || [];
     const senderName = user?.displayName || 'Usuario de Google Chat';
     const senderId = user?.name || 'unknown';
 
-    console.log(`[Google Chat] Message from ${senderName}: "${question.substring(0, 100)}" with ${attachments.length} attachment(s)`);
+    console.log(`[Google Chat] Message from ${senderName}: "${question.substring(0, 100)}" with ${attachments.length} attachment(s), space: ${spaceName}`);
 
-    if (!question.trim() && attachments.length === 0) {
-      return { authorizationAction: {}, actionResponse: { type: 'NEW_MESSAGE', message: { text: 'No he recibido ningún texto ni archivo. ¿En qué puedo ayudarte? Puedes escribir tu problema o adjuntar una foto o video.' } } };
+    // Process asynchronously and respond immediately
+    if (question.trim() || attachments.length > 0) {
+      processMessage(question, attachments, senderName, senderId, spaceName)
+        .then(() => console.log('[Chat] Async processing complete'))
+        .catch(err => console.error('[Chat] Async processing error:', err));
     }
 
-    try {
-      return await processMessage(question, attachments, senderName, senderId);
-    } catch (error) {
-      console.error('[Google Chat] Error handling message event:', error);
-      return {
-        authorizationAction: {},
-        actionResponse: { type: 'NEW_MESSAGE', message: { text: `❌ Lo siento, ocurrió un error al procesar tu solicitud: ${error.message}. Por favor, avisa al administrador.` } }
-      };
-    }
+    // Return null so server sends empty 200 immediately
+    return null;
   }
 
   // Legacy Chat API format: type, message, space, user
