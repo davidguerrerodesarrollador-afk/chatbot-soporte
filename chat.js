@@ -60,7 +60,7 @@ function getServiceAccountCredentials() {
       }
     }
 
-    throw new Error('SERVICE_ACCOUNT_JSON: no se pudo parsear');
+    throw new Error('SERVICE_ACCOUNT_JSON corrupto. Usa POST /api/admin/fix-sa con el JSON de la cuenta de servicio');
   }
   throw new Error('Service account not found. Set service-account.json or SERVICE_ACCOUNT_JSON env var.');
 }

@@ -66,7 +66,7 @@ function getServiceAccountCredentials() {
       }
     }
 
-    throw new Error('SERVICE_ACCOUNT_JSON: no se pudo parsear');
+    throw new Error('SERVICE_ACCOUNT_JSON corrupto. Debe ser el base64 del JSON completo de la cuenta de servicio. Usa: POST /api/admin/fix-sa con el JSON en el body');
   }
   if (fs.existsSync('./service-account.json')) {
     return JSON.parse(fs.readFileSync('./service-account.json', 'utf-8'));

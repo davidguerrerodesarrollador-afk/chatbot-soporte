@@ -262,6 +262,27 @@ app.post('/api/admin/test-media', apiLimiter, verifyAdmin, upload.single('file')
 });
 
 // ----------------------------------------------------
+// Helper: Generate correct base64 for SERVICE_ACCOUNT_JSON
+// ----------------------------------------------------
+app.post('/api/admin/fix-sa', apiLimiter, verifyAdmin, async (req, res) => {
+  try {
+    const sa = req.body;
+    if (!sa || !sa.type || !sa.project_id || !sa.private_key || !sa.client_email) {
+      return res.status(400).json({ error: 'Envía el JSON completo de la cuenta de servicio en el body' });
+    }
+    const jsonStr = JSON.stringify(sa);
+    const b64 = Buffer.from(jsonStr, 'utf-8').toString('base64');
+    res.json({
+      message: 'Copia este base64 en la env var SERVICE_ACCOUNT_JSON en Render:',
+      base64: b64,
+      length: b64.length
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ----------------------------------------------------
 // Scheduler: Daily Sync at 1:00 AM
 // ----------------------------------------------------
 cron.schedule('0 1 * * *', async () => {
