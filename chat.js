@@ -12,6 +12,10 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const authClient = new OAuth2Client();
 
 // Load service account credentials from file or env var
+function tryParseJSON(str) {
+  try { return JSON.parse(str); } catch { return null; }
+}
+
 function getServiceAccountCredentials() {
   const filePath = join(__dirname, 'service-account.json');
   if (fs.existsSync(filePath)) {
@@ -19,10 +23,23 @@ function getServiceAccountCredentials() {
   }
   const envVar = process.env.SERVICE_ACCOUNT_JSON;
   if (envVar) {
-    const json = Buffer.from(envVar, 'base64').toString('utf-8');
-    return JSON.parse(json);
+    let parsed = tryParseJSON(envVar);
+    if (parsed) return parsed;
+
+    const decoded = Buffer.from(envVar, 'base64').toString('utf-8');
+    parsed = tryParseJSON(decoded);
+    if (parsed) return parsed;
+
+    const fixed = decoded.replace(
+      /"private_key":\s*"(.*?)"(?=\s*[,}])/s,
+      (_, key) => `"private_key": "${key.replace(/\n/g, '\\n').replace(/\r/g, '\\r')}"`
+    );
+    parsed = tryParseJSON(fixed);
+    if (parsed) return parsed;
+
+    throw new Error('SERVICE_ACCOUNT_JSON: no se pudo parsear');
   }
-  throw new Error('Service account not found. Set service-account.json or SERVICE_ACCOUNT_JSON env var.');
+  throw new Error('Service account not found...');
 }
 
 // Send a message to a Google Chat space using the Chat API

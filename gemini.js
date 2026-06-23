@@ -13,10 +13,40 @@ let aiClientFallback = null;
 const MODEL_NAME = 'gemini-2.0-flash';
 const EMBEDDING_MODEL = 'text-embedding-004';
 
+function tryParseJSON(str) {
+  try { return JSON.parse(str); } catch { return null; }
+}
+
+function fixPrivateKeyNewlines(raw) {
+  return raw.replace(
+    /"private_key":\s*"(.*?)"(?=\s*[,}])/s,
+    (_, key) => `"private_key": "${key.replace(/\n/g, '\\n').replace(/\r/g, '\\r')}"`
+  );
+}
+
 function getServiceAccountCredentials() {
   const envVar = process.env.SERVICE_ACCOUNT_JSON;
   if (envVar) {
-    return JSON.parse(Buffer.from(envVar, 'base64').toString('utf-8'));
+    let parsed = tryParseJSON(envVar);
+    if (parsed) return parsed;
+
+    try {
+      const decoded = Buffer.from(envVar, 'base64').toString('utf-8');
+      parsed = tryParseJSON(decoded);
+      if (parsed) return parsed;
+    } catch {}
+
+    const fixed = fixPrivateKeyNewlines(envVar);
+    parsed = tryParseJSON(fixed);
+    if (parsed) return parsed;
+
+    try {
+      const decoded = Buffer.from(fixed, 'base64').toString('utf-8');
+      parsed = tryParseJSON(decoded);
+      if (parsed) return parsed;
+    } catch {}
+
+    throw new Error('SERVICE_ACCOUNT_JSON: no se pudo parsear como JSON ni como base64');
   }
   if (fs.existsSync('./service-account.json')) {
     return JSON.parse(fs.readFileSync('./service-account.json', 'utf-8'));
