@@ -23,33 +23,38 @@ function extractField(raw, field) {
   return m ? m[1] : null;
 }
 
-let saDiagnosticDone = false;
+function extractValidJSON(str) {
+  let p = tryParseJSON(str);
+  if (p) return p;
+  // Decoded content may have trailing binary garbage after valid JSON.
+  // Try truncating at each } right-to-left until parse succeeds.
+  let idx = str.lastIndexOf('}');
+  while (idx !== -1) {
+    p = tryParseJSON(str.substring(0, idx + 1));
+    if (p) return p;
+    if (idx === 0) break;
+    idx = str.lastIndexOf('}', idx - 1);
+  }
+  return null;
+}
 
 function getServiceAccountCredentials() {
   const envVar = process.env.SERVICE_ACCOUNT_JSON;
   if (envVar) {
-    if (!saDiagnosticDone) {
-      saDiagnosticDone = true;
-      console.log(`[SA] SERVICE_ACCOUNT_JSON length=${envVar.length} startsWith=${envVar.substring(0, 20)}` +
-        ` endsWith=${envVar.substring(envVar.length - 20).replace(/\n/, '\\n')}`);
-    }
-
     let parsed = tryParseJSON(envVar);
     if (parsed) return parsed;
 
-    let decoded = null;
     try {
-      decoded = Buffer.from(envVar, 'base64').toString('utf-8').replace(/\0/g, '');
-      console.log(`[SA] decoded length=${decoded.length} first60=${decoded.substring(0, 60).replace(/\n/g, '\\n')}`);
-      console.log(`[SA] decoded last60=${decoded.substring(Math.max(0, decoded.length - 60)).replace(/\n/g, '\\n')}`);
-      parsed = tryParseJSON(decoded);
-      if (parsed) return parsed;
-      console.log(`[SA] decoded is NOT valid JSON`);
-    } catch (e) {
-      console.log(`[SA] base64 decode failed: ${e.message}`);
-    }
+      const decoded = Buffer.from(envVar, 'base64').toString('utf-8').replace(/\0/g, '');
+      parsed = extractValidJSON(decoded);
+      if (parsed) {
+        console.log(`[SA] Parsed OK from base64 (${JSON.stringify(parsed).length} bytes of JSON)`);
+        return parsed;
+      }
+    } catch {}
 
-    // Manual extraction on decoded first, then raw env var
+    // Manual field extraction on decoded, then raw env var
+    const decoded = Buffer.from(envVar, 'base64').toString('utf-8').replace(/\0/g, '');
     for (const raw of [decoded, envVar].filter(Boolean)) {
       const project_id = extractField(raw, 'project_id');
       const client_email = extractField(raw, 'client_email');

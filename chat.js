@@ -32,13 +32,23 @@ function getServiceAccountCredentials() {
     let parsed = tryParseJSON(envVar);
     if (parsed) return parsed;
 
-    let decoded = null;
     try {
-      decoded = Buffer.from(envVar, 'base64').toString('utf-8').replace(/\0/g, '');
+      const decoded = Buffer.from(envVar, 'base64').toString('utf-8').replace(/\0/g, '');
+      // Try full parse first, then truncate at last } to strip trailing garbage
       parsed = tryParseJSON(decoded);
+      if (!parsed) {
+        let idx = decoded.lastIndexOf('}');
+        while (idx !== -1) {
+          parsed = tryParseJSON(decoded.substring(0, idx + 1));
+          if (parsed) break;
+          if (idx === 0) break;
+          idx = decoded.lastIndexOf('}', idx - 1);
+        }
+      }
       if (parsed) return parsed;
     } catch {}
 
+    const decoded = Buffer.from(envVar, 'base64').toString('utf-8').replace(/\0/g, '');
     for (const raw of [decoded, envVar].filter(Boolean)) {
       const project_id = extractField(raw, 'project_id');
       const client_email = extractField(raw, 'client_email');
