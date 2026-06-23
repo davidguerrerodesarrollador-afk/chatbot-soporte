@@ -21,6 +21,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Trust proxy for Render (required by express-rate-limit)
+app.set('trust proxy', 1);
+
 // Force HTTPS in production
 app.use((req, res, next) => {
   if (process.env.NODE_ENV === 'production' && !req.secure && req.headers['x-forwarded-proto'] !== 'https') {

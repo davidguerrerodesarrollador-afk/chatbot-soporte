@@ -157,14 +157,6 @@ async function processMessage(question, attachments, senderName, senderId, space
       responseText += `\n\nNota: No encontré información específica en los manuales de Drive relacionada con lo que enviaste.`;
     }
 
-    if (spaceName) {
-      try {
-        await sendChatMessage(spaceName, responseText);
-      } catch (e) {
-        console.log('[Chat] Chat API failed:', e.message);
-      }
-    }
-
     return { text: responseText };
   } finally {
     // Clean up temp files
@@ -240,13 +232,20 @@ export async function handleChatMessage(eventBody) {
 
     console.log(`[Google Chat] Message from ${senderName}: "${question.substring(0, 100)}" with ${attachments.length} attachment(s), space: ${spaceName}`);
 
-    // Fire-and-forget: answer arrives via Chat API only (sync response causes "no responde" in Workspace Add-on)
+    // Process synchronously: return answer directly from webhook
     if (question.trim() || attachments.length > 0) {
-      processMessage(question, attachments, senderName, senderId, spaceName)
-        .catch(err => console.error('[Chat] Async error:', err));
+      try {
+        const result = await processMessage(question, attachments, senderName, senderId);
+        if (result && result.text) {
+          return result;
+        }
+      } catch (err) {
+        console.error('[Chat] Error processing message:', err);
+        return { text: `❌ Error al procesar tu consulta: ${err.message}` };
+      }
     }
 
-    return null;
+    return { text: '¡Hola! Soy tu Asistente de Soporte Técnico. ¿En qué puedo ayudarte?' };
   }
 
   // Legacy Chat API format: type, message, space, user
