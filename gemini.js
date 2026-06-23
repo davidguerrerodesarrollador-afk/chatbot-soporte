@@ -30,29 +30,25 @@ function getServiceAccountCredentials() {
   if (envVar) {
     if (!saDiagnosticDone) {
       saDiagnosticDone = true;
-      const isB64 = /^[A-Za-z0-9+/=]*\s*$/.test(envVar);
-      console.log(`[SA] SERVICE_ACCOUNT_JSON length=${envVar.length} isBase64=${isB64} startsWith=${envVar.substring(0, 20)}` +
-        ` endsWith=${envVar.substring(envVar.length - 20)}`);
+      console.log(`[SA] SERVICE_ACCOUNT_JSON length=${envVar.length} startsWith=${envVar.substring(0, 20)}` +
+        ` endsWith=${envVar.substring(envVar.length - 20).replace(/\n/, '\\n')}`);
     }
 
     let parsed = tryParseJSON(envVar);
     if (parsed) return parsed;
 
-    const hasOnlyBase64 = /^[A-Za-z0-9+/=\s]*$/.test(envVar);
-    if (hasOnlyBase64) {
+    // Node.js Buffer.from(..., 'base64') ignores non-base64 characters.
+    // Try decoding even if the string isn't pure base64.
+    try {
       const decoded = Buffer.from(envVar, 'base64').toString('utf-8').replace(/\0/g, '');
       parsed = tryParseJSON(decoded);
       if (parsed) return parsed;
-    }
+    } catch {}
 
-    // Manual field extraction as fallback
-    const raw = hasOnlyBase64
-      ? Buffer.from(envVar, 'base64').toString('utf-8').replace(/\0/g, '')
-      : envVar;
-
-    const project_id = extractField(raw, 'project_id');
-    const client_email = extractField(raw, 'client_email');
-    let private_key = extractField(raw, 'private_key');
+    // Manual field extraction on the raw env var
+    const project_id = extractField(envVar, 'project_id');
+    const client_email = extractField(envVar, 'client_email');
+    let private_key = extractField(envVar, 'private_key');
     if (private_key) private_key = private_key.replace(/\\n/g, '\n');
 
     if (project_id && client_email && private_key) {
