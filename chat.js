@@ -25,26 +25,6 @@ function getServiceAccountCredentials() {
   throw new Error('Service account not found. Set service-account.json or SERVICE_ACCOUNT_JSON env var.');
 }
 
-// Send a message to a Google Chat space using the Chat API
-async function sendChatMessage(spaceName, text) {
-  const key = getServiceAccountCredentials();
-  const jwtClient = new JWT({
-    email: key.client_email,
-    key: key.private_key,
-    scopes: ['https://www.googleapis.com/auth/chat.bot'],
-  });
-  await jwtClient.authorize();
-
-  const url = `https://chat.googleapis.com/v1/${spaceName}/messages`;
-  const body = { text };
-  await jwtClient.request({
-    url,
-    method: 'POST',
-    data: body,
-  });
-  console.log(`[Chat] Message sent to space: ${spaceName}`);
-}
-
 // Download a Google Chat attachment using the service account
 async function downloadChatAttachment(sourceUrl, outputPath) {
   const key = getServiceAccountCredentials();
@@ -65,7 +45,7 @@ async function downloadChatAttachment(sourceUrl, outputPath) {
 /**
  * Process the user's question message, optionally with attached images/videos.
  */
-async function processMessage(question, attachments, senderName, senderId, spaceName) {
+async function processMessage(question, attachments, senderName, senderId) {
   const tempDir = join(__dirname, 'temp');
   if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
 
@@ -130,10 +110,7 @@ async function processMessage(question, attachments, senderName, senderId, space
       responseText += `\n\nNota: No encontré información específica en los manuales de Drive relacionada con lo que enviaste.`;
     }
 
-    // 6. Send message via Chat API (async, using service account)
-    if (spaceName) {
-      await sendChatMessage(spaceName, responseText);
-    }
+    return { text: responseText };
   } finally {
     // Clean up temp files
     for (const p of tempPaths) {
@@ -197,26 +174,20 @@ export async function handleChatMessage(eventBody) {
   const chatData = eventBody.chat;
   if (chatData?.messagePayload?.message) {
     const msg = chatData.messagePayload.message;
-    const space = chatData.messagePayload.space;
     const user = chatData.user;
-    const spaceName = space?.name;
 
     const question = msg.text || '';
     const attachments = msg.attachment || msg.attachments || [];
     const senderName = user?.displayName || 'Usuario de Google Chat';
     const senderId = user?.name || 'unknown';
 
-    console.log(`[Google Chat] Message from ${senderName}: "${question.substring(0, 100)}" with ${attachments.length} attachment(s), space: ${spaceName}`);
+    console.log(`[Google Chat] Message from ${senderName}: "${question.substring(0, 100)}" with ${attachments.length} attachment(s)`);
 
-    // Process asynchronously and respond immediately
-    if (question.trim() || attachments.length > 0) {
-      processMessage(question, attachments, senderName, senderId, spaceName)
-        .then(() => console.log('[Chat] Async processing complete'))
-        .catch(err => console.error('[Chat] Async processing error:', err));
+    if (!question.trim() && attachments.length === 0) {
+      return { text: 'No he recibido ningún texto ni archivo. ¿En qué puedo ayudarte?' };
     }
 
-    // Return null so server sends empty 200 immediately
-    return null;
+    return await processMessage(question, attachments, senderName, senderId);
   }
 
   // Legacy Chat API format: type, message, space, user
