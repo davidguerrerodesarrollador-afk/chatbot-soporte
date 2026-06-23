@@ -168,38 +168,20 @@ export async function verifyGoogleChatToken(req, res, next) {
  * Process a message event from Google Chat.
  */
 export async function handleChatMessage(eventBody) {
-  const { type, message, space, user } = eventBody;
+  // Workspace Add-on format (new): chat.messagePayload.message, chat.user
+  const chatData = eventBody.chat;
+  if (chatData?.messagePayload?.message) {
+    const msg = chatData.messagePayload.message;
+    const space = chatData.messagePayload.space;
+    const user = chatData.user;
 
-  console.log('[Chat] handleChatMessage event type:', type, 'space type:', space?.type, 'user:', user?.displayName || user?.email || 'unknown');
-
-  // Handle bot added to space event
-  if (type === 'ADDED_TO_SPACE') {
-    const spaceType = space?.type === 'DM' ? 'Direct Message' : 'Space';
-    console.log(`Bot added to space: ${space?.name} (${spaceType})`);
-
-    return {
-      text: `¡Hola! 👋 Soy tu Asistente de Soporte Técnico.
-He sido creado para ayudarte a resolver problemas en nuestras máquinas. Mi base de conocimiento se alimenta directamente de una carpeta privada de Google Drive configurada por el administrador.
-
-Puedes enviarme:
-• Una descripción del problema
-• Una foto del error o la máquina
-• Un video mostrando el inconveniente
-
-Yo analizaré todo junto con los manuales para darte una solución detallada.`
-    };
-  }
-
-  // Handle message event
-  if (type === 'MESSAGE') {
-    const question = message?.text || '';
-    const attachments = message?.attachment || message?.attachments || [];
+    const question = msg.text || '';
+    const attachments = msg.attachment || msg.attachments || [];
     const senderName = user?.displayName || 'Usuario de Google Chat';
     const senderId = user?.name || 'unknown';
 
     console.log(`[Google Chat] Message from ${senderName}: "${question.substring(0, 100)}" with ${attachments.length} attachment(s)`);
 
-    // If no text and no attachments, ask for input
     if (!question.trim() && attachments.length === 0) {
       return { text: 'No he recibido ningún texto ni archivo. ¿En qué puedo ayudarte? Puedes escribir tu problema o adjuntar una foto o video.' };
     }
@@ -214,5 +196,51 @@ Yo analizaré todo junto con los manuales para darte una solución detallada.`
     }
   }
 
-  return null;
+  // Legacy Chat API format: type, message, space, user
+  const { type, message, space, user } = eventBody;
+  if (type) {
+    console.log('[Chat] Legacy event type:', type, 'user:', user?.displayName || user?.email || 'unknown');
+
+    if (type === 'ADDED_TO_SPACE') {
+      const spaceType = space?.type === 'DM' ? 'Direct Message' : 'Space';
+      console.log(`Bot added to space: ${space?.name} (${spaceType})`);
+      return {
+        text: `¡Hola! Soy tu Asistente de Soporte Técnico.
+He sido creado para ayudarte a resolver problemas en nuestras máquinas.
+
+Puedes enviarme:
+• Una descripción del problema
+• Una foto del error o la máquina
+• Un video mostrando el inconveniente
+
+Yo analizaré todo junto con los manuales para darte una solución detallada.`
+      };
+    }
+
+    if (type === 'MESSAGE') {
+      const question = message?.text || '';
+      const attachments = message?.attachment || message?.attachments || [];
+      const senderName = user?.displayName || 'Usuario de Google Chat';
+      const senderId = user?.name || 'unknown';
+
+      console.log(`[Google Chat] Message from ${senderName}: "${question.substring(0, 100)}"`);
+
+      if (!question.trim() && attachments.length === 0) {
+        return { text: 'No he recibido ningún texto ni archivo. ¿En qué puedo ayudarte?' };
+      }
+
+      try {
+        return await processMessage(question, attachments, senderName, senderId);
+      } catch (error) {
+        console.error('[Google Chat] Error handling message event:', error);
+        return {
+          text: `❌ Lo siento, ocurrió un error al procesar tu solicitud: ${error.message}. Por favor, avisa al administrador.`
+        };
+      }
+    }
+  }
+
+  // Unrecognized event
+  console.log('[Chat] Unrecognized event, keys:', Object.keys(eventBody));
+  return { text: 'Evento recibido. Gracias.' };
 }
