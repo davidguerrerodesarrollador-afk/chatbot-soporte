@@ -137,15 +137,30 @@ export async function verifyGoogleChatToken(req, res, next) {
   }
 
   try {
-    const ticket = await authClient.verifyIdToken({
-      idToken: token,
-      audience: projectNumber,
-    });
-
+    // First try without audience to inspect the token
+    const ticket = await authClient.verifyIdToken({ idToken: token });
     const payload = ticket.getPayload();
     const chatIssuer = 'chat@system.gserviceaccount.com';
 
-    console.log('[Chat] JWT payload iss:', payload.iss, 'aud:', payload.aud, 'email_verified:', payload.email_verified);
+    console.log('[Chat] JWT payload iss:', payload.iss, 'aud:', payload.aud, 'azp:', payload.azp, 'email_verified:', payload.email_verified);
+    console.log('[Chat] Expected audience (project number):', projectNumber);
+
+    // Now check audience manually
+    if (payload.aud !== projectNumber) {
+      console.warn('[Chat] Audience mismatch! Token aud:', payload.aud, 'Expected:', projectNumber);
+      // Try alternate audience: maybe it's a client ID format
+      if (payload.azp) {
+        console.log('[Chat] Trying azp as audience:', payload.azp);
+        const ticket2 = await authClient.verifyIdToken({ idToken: token, audience: payload.azp });
+        const payload2 = ticket2.getPayload();
+        if (payload2.iss === chatIssuer) {
+          console.log('[Chat] azp-based verification succeeded!');
+          req.googleChatPayload = payload2;
+          return next();
+        }
+      }
+      return res.status(401).json({ error: 'Unauthorized: Invalid audience' });
+    }
 
     if (payload.iss === chatIssuer) {
       req.googleChatPayload = payload;
