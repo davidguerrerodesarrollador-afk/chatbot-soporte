@@ -484,7 +484,8 @@ async function sendMiniChat() {
       const data = await response.json();
       appendMessage('mini-chat-messages', 'bot', data.answer);
     } else {
-      appendMessage('mini-chat-messages', 'bot', '❌ Error al procesar tu consulta.');
+      const data = await response.json().catch(() => ({}));
+      appendMessage('mini-chat-messages', 'bot', `❌ Error: ${data.error || 'Error al procesar tu consulta.'}`);
     }
   } catch (error) {
     removeTypingIndicator('mini-chat-messages', typingId);
@@ -520,7 +521,8 @@ async function sendFullChat() {
       appendMessage('play-chat-messages', 'bot', data.answer);
       renderPlaygroundSources(data.sources);
     } else {
-      appendMessage('play-chat-messages', 'bot', '❌ Error al procesar tu consulta.');
+      const data = await response.json().catch(() => ({}));
+      appendMessage('play-chat-messages', 'bot', `❌ Error: ${data.error || 'Error al procesar tu consulta.'}`);
       renderPlaygroundSources([]);
     }
   } catch (error) {
