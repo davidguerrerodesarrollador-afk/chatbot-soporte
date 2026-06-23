@@ -131,7 +131,12 @@ async function processMessage(question, attachments, senderName, senderId, space
 
     // Send via Chat API if space is known
     if (spaceName) {
-      await sendChatMessage(spaceName, responseText);
+      try {
+        await sendChatMessage(spaceName, responseText);
+        return;
+      } catch (e) {
+        console.log('[Chat] Chat API failed:', e.message);
+      }
     }
   } finally {
     // Clean up temp files
@@ -207,14 +212,12 @@ export async function handleChatMessage(eventBody) {
 
     console.log(`[Google Chat] Message from ${senderName}: "${question.substring(0, 100)}" with ${attachments.length} attachment(s), space: ${spaceName}`);
 
-    // Process async so server responds immediately
+    // Process and return synchronously
     if (question.trim() || attachments.length > 0) {
-      processMessage(question, attachments, senderName, senderId, spaceName)
-        .then(() => console.log('[Chat] Async processing complete'))
-        .catch(err => console.error('[Chat] Async processing error:', err));
+      await processMessage(question, attachments, senderName, senderId, spaceName);
     }
 
-    // Return a text response so Google Chat doesn't show "no responde"
+    // Return processing message (Chat API will send the real answer if it works)
     return { text: 'Procesando tu consulta...' };
   }
 
