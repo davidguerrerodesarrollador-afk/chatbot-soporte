@@ -87,7 +87,9 @@ app.post('/api/chat', verifyGoogleChatToken, async (req, res) => {
     const response = await handleChatMessage(req.body);
     if (response) {
       console.log('[Server] Sending chat response');
-      return res.json(response);
+      res.status(200);
+      res.set('Content-Type', 'application/json');
+      return res.send(JSON.stringify(response));
     }
     console.log('[Server] No response from handler, sending empty 200');
     return res.status(200).send();
