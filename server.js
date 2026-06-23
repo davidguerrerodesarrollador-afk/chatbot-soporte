@@ -80,16 +80,14 @@ function verifyAdmin(req, res, next) {
 app.get('/api/chat', (req, res) => {
   res.status(200).send('Bot endpoint active');
 });
-app.post('/api/chat', async (req, res) => {
+app.post('/api/chat', verifyGoogleChatToken, async (req, res) => {
   const tStart = Date.now();
   try {
     console.log('[Server] Chat received. Processing...');
     const response = await handleChatMessage(req.body);
     if (response) {
       console.log('[Server] Sending chat response');
-      res.status(200);
-      res.set('Content-Type', 'application/json');
-      return res.send(JSON.stringify(response));
+      return res.json(response);
     }
     console.log('[Server] No response from handler, sending empty 200');
     return res.status(200).send();

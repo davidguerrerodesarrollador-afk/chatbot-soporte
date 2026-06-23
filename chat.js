@@ -110,7 +110,10 @@ async function processMessage(question, attachments, senderName, senderId) {
       responseText += `\n\nNota: No encontré información específica en los manuales de Drive relacionada con lo que enviaste.`;
     }
 
-    return { actionResponse: { type: 'UPDATE_MESSAGE', message: { text: responseText } } };
+    return {
+      authorizationAction: {},
+      actionResponse: { type: 'NEW_MESSAGE', message: { text: responseText } }
+    };
   } finally {
     // Clean up temp files
     for (const p of tempPaths) {
@@ -185,7 +188,7 @@ export async function handleChatMessage(eventBody) {
     console.log(`[Google Chat] Message from ${senderName}: "${question.substring(0, 100)}" with ${attachments.length} attachment(s)`);
 
     if (!question.trim() && attachments.length === 0) {
-      return { actionResponse: { type: 'NEW_MESSAGE', message: { text: 'No he recibido ningún texto ni archivo. ¿En qué puedo ayudarte? Puedes escribir tu problema o adjuntar una foto o video.' } } };
+      return { authorizationAction: {}, actionResponse: { type: 'NEW_MESSAGE', message: { text: 'No he recibido ningún texto ni archivo. ¿En qué puedo ayudarte? Puedes escribir tu problema o adjuntar una foto o video.' } } };
     }
 
     try {
@@ -193,6 +196,7 @@ export async function handleChatMessage(eventBody) {
     } catch (error) {
       console.error('[Google Chat] Error handling message event:', error);
       return {
+        authorizationAction: {},
         actionResponse: { type: 'NEW_MESSAGE', message: { text: `❌ Lo siento, ocurrió un error al procesar tu solicitud: ${error.message}. Por favor, avisa al administrador.` } }
       };
     }
