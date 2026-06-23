@@ -37,23 +37,28 @@ function getServiceAccountCredentials() {
     let parsed = tryParseJSON(envVar);
     if (parsed) return parsed;
 
-    // Node.js Buffer.from(..., 'base64') ignores non-base64 characters.
-    // Try decoding even if the string isn't pure base64.
+    let decoded = null;
     try {
-      const decoded = Buffer.from(envVar, 'base64').toString('utf-8').replace(/\0/g, '');
+      decoded = Buffer.from(envVar, 'base64').toString('utf-8').replace(/\0/g, '');
+      console.log(`[SA] decoded length=${decoded.length} first60=${decoded.substring(0, 60).replace(/\n/g, '\\n')}`);
+      console.log(`[SA] decoded last60=${decoded.substring(Math.max(0, decoded.length - 60)).replace(/\n/g, '\\n')}`);
       parsed = tryParseJSON(decoded);
       if (parsed) return parsed;
-    } catch {}
+      console.log(`[SA] decoded is NOT valid JSON`);
+    } catch (e) {
+      console.log(`[SA] base64 decode failed: ${e.message}`);
+    }
 
-    // Manual field extraction on the raw env var
-    const project_id = extractField(envVar, 'project_id');
-    const client_email = extractField(envVar, 'client_email');
-    let private_key = extractField(envVar, 'private_key');
-    if (private_key) private_key = private_key.replace(/\\n/g, '\n');
-
-    if (project_id && client_email && private_key) {
-      console.log('[SA] Fields extracted manually OK');
-      return { project_id, client_email, private_key };
+    // Manual extraction on decoded first, then raw env var
+    for (const raw of [decoded, envVar].filter(Boolean)) {
+      const project_id = extractField(raw, 'project_id');
+      const client_email = extractField(raw, 'client_email');
+      let private_key = extractField(raw, 'private_key');
+      if (private_key) private_key = private_key.replace(/\\n/g, '\n');
+      if (project_id && client_email && private_key) {
+        console.log('[SA] Fields extracted manually');
+        return { project_id, client_email, private_key };
+      }
     }
 
     throw new Error('SERVICE_ACCOUNT_JSON: no se pudo parsear');
