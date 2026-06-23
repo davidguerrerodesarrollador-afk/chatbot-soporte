@@ -12,6 +12,16 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const authClient = new OAuth2Client();
 
 // Load service account credentials from file or env var
+function tryParseJSON(str) {
+  try { return JSON.parse(str); } catch { return null; }
+}
+
+function extractField(raw, field) {
+  const re = new RegExp(`"${field}"\\s*:\\s*"([^"]*)"`, 's');
+  const m = raw.match(re);
+  return m ? m[1] : null;
+}
+
 function getServiceAccountCredentials() {
   const filePath = join(__dirname, 'service-account.json');
   if (fs.existsSync(filePath)) {
@@ -19,8 +29,26 @@ function getServiceAccountCredentials() {
   }
   const envVar = process.env.SERVICE_ACCOUNT_JSON;
   if (envVar) {
-    const json = Buffer.from(envVar, 'base64').toString('utf-8');
-    return JSON.parse(json);
+    // Try parsing as plain JSON first
+    let parsed = tryParseJSON(envVar);
+    if (parsed) return parsed;
+
+    // Try parsing as base64 if it fails
+    try {
+      const decoded = Buffer.from(envVar, 'base64').toString('utf-8').replace(/\0/g, '');
+      parsed = tryParseJSON(decoded);
+      if (parsed) return parsed;
+    } catch {}
+
+    // Fallback: extract fields with regex (handles corrupted base64 with trailing garbage)
+    const decoded = envVar.includes('{') ? envVar : Buffer.from(envVar, 'base64').toString('utf-8');
+    const project_id = extractField(decoded, 'project_id');
+    const client_email = extractField(decoded, 'client_email');
+    let private_key = extractField(decoded, 'private_key');
+    if (private_key) private_key = private_key.replace(/\\n/g, '\n');
+    if (project_id && client_email && private_key) {
+      return { project_id, client_email, private_key };
+    }
   }
   throw new Error('Service account not found. Set service-account.json or SERVICE_ACCOUNT_JSON env var.');
 }
