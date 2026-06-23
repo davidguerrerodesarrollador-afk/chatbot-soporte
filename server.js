@@ -79,10 +79,13 @@ function verifyAdmin(req, res, next) {
 // ----------------------------------------------------
 app.post('/api/chat', verifyGoogleChatToken, async (req, res) => {
   try {
+    console.log('[Server] Chat event type:', req.body?.type, 'space:', req.body?.space?.type, 'hasMessage:', !!req.body?.message);
     const response = await handleChatMessage(req.body);
+    console.log('[Server] handleChatMessage returned:', response ? 'response object' : 'null');
     if (response) {
       return res.json(response);
     }
+    console.log('[Server] Sending empty 200');
     return res.status(200).send();
   } catch (error) {
     console.error('[Server] Error handling Google Chat webhook:', error);

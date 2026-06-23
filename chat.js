@@ -170,6 +170,8 @@ export async function verifyGoogleChatToken(req, res, next) {
 export async function handleChatMessage(eventBody) {
   const { type, message, space, user } = eventBody;
 
+  console.log('[Chat] handleChatMessage event type:', type, 'space type:', space?.type, 'user:', user?.displayName || user?.email || 'unknown');
+
   // Handle bot added to space event
   if (type === 'ADDED_TO_SPACE') {
     const spaceType = space?.type === 'DM' ? 'Direct Message' : 'Space';
