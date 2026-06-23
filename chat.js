@@ -240,13 +240,20 @@ export async function handleChatMessage(eventBody) {
 
     console.log(`[Google Chat] Message from ${senderName}: "${question.substring(0, 100)}" with ${attachments.length} attachment(s), space: ${spaceName}`);
 
-    // Try async Chat API first, respond immediately so no timeout
+    // Process the message synchronously and return the answer directly
     if (question.trim() || attachments.length > 0) {
-      processMessage(question, attachments, senderName, senderId, spaceName)
-        .catch(err => console.error('[Chat] Async error:', err));
+      try {
+        const result = await processMessage(question, attachments, senderName, senderId, spaceName);
+        if (result && result.text) {
+          return result;
+        }
+      } catch (err) {
+        console.error('[Chat] Error processing message:', err);
+        return { text: `❌ Error al procesar tu consulta: ${err.message}` };
+      }
     }
 
-    return { text: 'Procesando tu consulta...' };
+    return { text: '¡Hola! Soy tu Asistente de Soporte Técnico. ¿En qué puedo ayudarte?' };
   }
 
   // Legacy Chat API format: type, message, space, user
