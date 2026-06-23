@@ -187,7 +187,15 @@ export async function handleChatMessage(eventBody) {
       return { text: 'No he recibido ningún texto ni archivo. ¿En qué puedo ayudarte?' };
     }
 
-    return await processMessage(question, attachments, senderName, senderId);
+    // Process async - respond immediately so Google Chat doesn't time out
+    const quickReply = 'Consultando la documentación técnica, un momento por favor...';
+    processMessage(question, attachments, senderName, senderId)
+      .then(async (answer) => {
+        console.log('[Chat] Full answer ready, but cannot send async without API key');
+      })
+      .catch(err => console.error('[Chat] Async processing error:', err));
+
+    return { text: quickReply };
   }
 
   // Legacy Chat API format: type, message, space, user
