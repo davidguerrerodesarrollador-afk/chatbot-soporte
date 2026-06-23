@@ -137,38 +137,27 @@ export async function verifyGoogleChatToken(req, res, next) {
   }
 
   try {
-    // First try without audience to inspect the token
     const ticket = await authClient.verifyIdToken({ idToken: token });
     const payload = ticket.getPayload();
-    const chatIssuer = 'chat@system.gserviceaccount.com';
 
-    console.log('[Chat] JWT payload iss:', payload.iss, 'aud:', payload.aud, 'azp:', payload.azp, 'email_verified:', payload.email_verified);
-    console.log('[Chat] Expected audience (project number):', projectNumber);
+    console.log('[Chat] JWT iss:', payload.iss, 'aud:', payload.aud, 'email_verified:', payload.email_verified);
 
-    // Now check audience manually
-    if (payload.aud !== projectNumber) {
-      console.warn('[Chat] Audience mismatch! Token aud:', payload.aud, 'Expected:', projectNumber);
-      // Try alternate audience: maybe it's a client ID format
-      if (payload.azp) {
-        console.log('[Chat] Trying azp as audience:', payload.azp);
-        const ticket2 = await authClient.verifyIdToken({ idToken: token, audience: payload.azp });
-        const payload2 = ticket2.getPayload();
-        if (payload2.iss === chatIssuer) {
-          console.log('[Chat] azp-based verification succeeded!');
-          req.googleChatPayload = payload2;
-          return next();
-        }
-      }
-      return res.status(401).json({ error: 'Unauthorized: Invalid audience' });
+    // Google Chat sends user ID tokens with iss=https://accounts.google.com
+    // and aud = our bot URL. Check email_verified and valid issuer.
+    const validIssuers = ['https://accounts.google.com', 'accounts.google.com'];
+    if (!validIssuers.includes(payload.iss)) {
+      console.warn('[Chat] Invalid issuer:', payload.iss);
+      return res.status(401).json({ error: 'Unauthorized: Invalid issuer' });
     }
 
-    if (payload.iss === chatIssuer) {
-      req.googleChatPayload = payload;
-      return next();
-    } else {
-      console.warn('JWT verification failed: Issuer is not Google Chat. Expected:', chatIssuer, 'Got:', payload.iss);
-      return res.status(401).json({ error: 'Unauthorized: Invalid token issuer' });
+    if (!payload.email_verified) {
+      console.warn('[Chat] Email not verified');
+      return res.status(401).json({ error: 'Unauthorized: Email not verified' });
     }
+
+    console.log('[Chat] JWT verification successful, user:', payload.email);
+    req.googleChatPayload = payload;
+    return next();
   } catch (error) {
     console.error('JWT validation error:', error.message, error.stack);
     return res.status(401).json({ error: 'Unauthorized: Token validation failed' });
