@@ -29,38 +29,25 @@ function getServiceAccountCredentials() {
   }
   const envVar = process.env.SERVICE_ACCOUNT_JSON;
   if (envVar) {
+    // Try parsing as plain JSON first
     let parsed = tryParseJSON(envVar);
     if (parsed) return parsed;
 
+    // Try parsing as base64 if it fails
     try {
       const decoded = Buffer.from(envVar, 'base64').toString('utf-8').replace(/\0/g, '');
-      // Try full parse first, then truncate at last } to strip trailing garbage
       parsed = tryParseJSON(decoded);
-      if (!parsed) {
-        let idx = decoded.lastIndexOf('}');
-        while (idx !== -1) {
-          parsed = tryParseJSON(decoded.substring(0, idx + 1));
-          if (parsed) break;
-          if (idx === 0) break;
-          idx = decoded.lastIndexOf('}', idx - 1);
-        }
-      }
       if (parsed) return parsed;
     } catch {}
 
-    const decoded = Buffer.from(envVar, 'base64').toString('utf-8').replace(/\0/g, '');
-    for (const raw of [decoded, envVar].filter(Boolean)) {
-      const project_id = extractField(raw, 'project_id');
-      const client_email = extractField(raw, 'client_email');
-      let private_key = extractField(raw, 'private_key');
-      if (private_key) private_key = private_key.replace(/\\n/g, '\n');
-      if (project_id && client_email && private_key) {
-        console.log('[Chat] SA fields extracted manually');
-        return { project_id, client_email, private_key };
-      }
+    const decoded = envVar.includes('{') ? envVar : Buffer.from(envVar, 'base64').toString('utf-8');
+    const project_id = extractField(decoded, 'project_id');
+    const client_email = extractField(decoded, 'client_email');
+    let private_key = extractField(decoded, 'private_key');
+    if (private_key) private_key = private_key.replace(/\\n/g, '\n');
+    if (project_id && client_email && private_key) {
+      return { project_id, client_email, private_key };
     }
-
-    throw new Error('SERVICE_ACCOUNT_JSON corrupto. Usa POST /api/admin/fix-sa con el JSON de la cuenta de servicio');
   }
   throw new Error('Service account not found. Set service-account.json or SERVICE_ACCOUNT_JSON env var.');
 }
