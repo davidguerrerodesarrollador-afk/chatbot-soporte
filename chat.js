@@ -214,7 +214,8 @@ export async function handleChatMessage(eventBody) {
         .catch(err => console.error('[Chat] Async processing error:', err));
     }
 
-    return null;
+    // Return a text response so Google Chat doesn't show "no responde"
+    return { text: 'Procesando tu consulta...' };
   }
 
     if (!question.trim() && attachments.length === 0) {
