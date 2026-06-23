@@ -212,13 +212,13 @@ export async function handleChatMessage(eventBody) {
 
     console.log(`[Google Chat] Message from ${senderName}: "${question.substring(0, 100)}" with ${attachments.length} attachment(s), space: ${spaceName}`);
 
-    // Fire-and-forget: respond "Procesando..." immediately, answer arrives via Chat API
+    // Fire-and-forget: answer arrives via Chat API only (sync response causes "no responde" in Workspace Add-on)
     if (question.trim() || attachments.length > 0) {
       processMessage(question, attachments, senderName, senderId, spaceName)
         .catch(err => console.error('[Chat] Async error:', err));
     }
 
-    return { text: 'Procesando tu consulta...' };
+    return null;
   }
 
   // Legacy Chat API format: type, message, space, user
