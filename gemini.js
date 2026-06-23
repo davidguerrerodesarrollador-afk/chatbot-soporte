@@ -17,36 +17,50 @@ function tryParseJSON(str) {
   try { return JSON.parse(str); } catch { return null; }
 }
 
-function fixPrivateKeyNewlines(raw) {
-  return raw.replace(
-    /"private_key":\s*"(.*?)"(?=\s*[,}])/s,
-    (_, key) => `"private_key": "${key.replace(/\n/g, '\\n').replace(/\r/g, '\\r')}"`
-  );
+function extractField(raw, field) {
+  const re = new RegExp(`"${field}"\\s*:\\s*"([^"]*)"`, 's');
+  const m = raw.match(re);
+  return m ? m[1] : null;
 }
+
+let saDiagnosticDone = false;
 
 function getServiceAccountCredentials() {
   const envVar = process.env.SERVICE_ACCOUNT_JSON;
   if (envVar) {
+    if (!saDiagnosticDone) {
+      saDiagnosticDone = true;
+      const isB64 = /^[A-Za-z0-9+/=]*\s*$/.test(envVar);
+      console.log(`[SA] SERVICE_ACCOUNT_JSON length=${envVar.length} isBase64=${isB64} startsWith=${envVar.substring(0, 20)}` +
+        ` endsWith=${envVar.substring(envVar.length - 20)}`);
+    }
+
     let parsed = tryParseJSON(envVar);
     if (parsed) return parsed;
 
-    try {
-      const decoded = Buffer.from(envVar, 'base64').toString('utf-8');
+    const hasOnlyBase64 = /^[A-Za-z0-9+/=\s]*$/.test(envVar);
+    if (hasOnlyBase64) {
+      const decoded = Buffer.from(envVar, 'base64').toString('utf-8').replace(/\0/g, '');
       parsed = tryParseJSON(decoded);
       if (parsed) return parsed;
-    } catch {}
+    }
 
-    const fixed = fixPrivateKeyNewlines(envVar);
-    parsed = tryParseJSON(fixed);
-    if (parsed) return parsed;
+    // Manual field extraction as fallback
+    const raw = hasOnlyBase64
+      ? Buffer.from(envVar, 'base64').toString('utf-8').replace(/\0/g, '')
+      : envVar;
 
-    try {
-      const decoded = Buffer.from(fixed, 'base64').toString('utf-8');
-      parsed = tryParseJSON(decoded);
-      if (parsed) return parsed;
-    } catch {}
+    const project_id = extractField(raw, 'project_id');
+    const client_email = extractField(raw, 'client_email');
+    let private_key = extractField(raw, 'private_key');
+    if (private_key) private_key = private_key.replace(/\\n/g, '\n');
 
-    throw new Error('SERVICE_ACCOUNT_JSON: no se pudo parsear como JSON ni como base64');
+    if (project_id && client_email && private_key) {
+      console.log('[SA] Fields extracted manually OK');
+      return { project_id, client_email, private_key };
+    }
+
+    throw new Error('SERVICE_ACCOUNT_JSON: no se pudo parsear');
   }
   if (fs.existsSync('./service-account.json')) {
     return JSON.parse(fs.readFileSync('./service-account.json', 'utf-8'));

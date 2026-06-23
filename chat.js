@@ -16,6 +16,12 @@ function tryParseJSON(str) {
   try { return JSON.parse(str); } catch { return null; }
 }
 
+function extractField(raw, field) {
+  const re = new RegExp(`"${field}"\\s*:\\s*"([^"]*)"`, 's');
+  const m = raw.match(re);
+  return m ? m[1] : null;
+}
+
 function getServiceAccountCredentials() {
   const filePath = join(__dirname, 'service-account.json');
   if (fs.existsSync(filePath)) {
@@ -26,20 +32,30 @@ function getServiceAccountCredentials() {
     let parsed = tryParseJSON(envVar);
     if (parsed) return parsed;
 
-    const decoded = Buffer.from(envVar, 'base64').toString('utf-8');
-    parsed = tryParseJSON(decoded);
-    if (parsed) return parsed;
+    const hasOnlyBase64 = /^[A-Za-z0-9+/=\s]*$/.test(envVar);
+    if (hasOnlyBase64) {
+      const decoded = Buffer.from(envVar, 'base64').toString('utf-8').replace(/\0/g, '');
+      parsed = tryParseJSON(decoded);
+      if (parsed) return parsed;
+    }
 
-    const fixed = decoded.replace(
-      /"private_key":\s*"(.*?)"(?=\s*[,}])/s,
-      (_, key) => `"private_key": "${key.replace(/\n/g, '\\n').replace(/\r/g, '\\r')}"`
-    );
-    parsed = tryParseJSON(fixed);
-    if (parsed) return parsed;
+    const raw = hasOnlyBase64
+      ? Buffer.from(envVar, 'base64').toString('utf-8').replace(/\0/g, '')
+      : envVar;
+
+    const project_id = extractField(raw, 'project_id');
+    const client_email = extractField(raw, 'client_email');
+    let private_key = extractField(raw, 'private_key');
+    if (private_key) private_key = private_key.replace(/\\n/g, '\n');
+
+    if (project_id && client_email && private_key) {
+      console.log('[Chat] SA fields extracted manually');
+      return { project_id, client_email, private_key };
+    }
 
     throw new Error('SERVICE_ACCOUNT_JSON: no se pudo parsear');
   }
-  throw new Error('Service account not found...');
+  throw new Error('Service account not found. Set service-account.json or SERVICE_ACCOUNT_JSON env var.');
 }
 
 // Send a message to a Google Chat space using the Chat API
