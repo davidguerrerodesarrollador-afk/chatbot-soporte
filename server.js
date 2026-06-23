@@ -80,7 +80,7 @@ function verifyAdmin(req, res, next) {
 app.get('/api/chat', (req, res) => {
   res.status(200).send('Bot endpoint active');
 });
-app.post('/api/chat', verifyGoogleChatToken, async (req, res) => {
+app.post('/api/chat', async (req, res) => {
   const tStart = Date.now();
   try {
     console.log('[Server] Chat received. Processing...');
