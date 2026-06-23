@@ -5,7 +5,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 let aiClient = null;
-const MODEL_NAME = 'gemini-2.5-flash';
+const MODEL_NAME = 'gemini-1.5-flash';
 const EMBEDDING_MODEL = 'gemini-embedding-2';
 
 // Initialize Gemini Client
