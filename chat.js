@@ -156,7 +156,14 @@ async function processMessage(question, attachments, senderName, senderId, space
       responseText += `\n\nNota: No encontré información específica en los manuales de Drive relacionada con lo que enviaste.`;
     }
 
-    // Send via Chat API if space is known asynchronously, but return it for synchronous webhook replies too
+    if (spaceName) {
+      try {
+        await sendChatMessage(spaceName, responseText);
+      } catch (e) {
+        console.log('[Chat] Chat API failed:', e.message);
+      }
+    }
+
     return { text: responseText };
   } finally {
     // Clean up temp files
