@@ -79,8 +79,10 @@ async function processMessage(question, attachments, senderName, senderId) {
 
   try {
     // 3. Generate answer using text + media context
+    const start = Date.now();
     const userQuestion = question?.trim() || 'Analiza esta imagen o video y dame información relevante.';
     const answer = await answerQuestion(userQuestion, relevantFiles, mediaParts);
+    console.log(`[Chat] Gemini answer took ${Date.now() - start}ms`);
 
     // 4. Save to chat logs
     const sourceNames = relevantFiles.map(f => `${f.name} (Similitud: ${Math.round(f.score * 100)}%)`);
