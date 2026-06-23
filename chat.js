@@ -218,13 +218,6 @@ export async function handleChatMessage(eventBody) {
     return { text: 'Procesando tu consulta...' };
   }
 
-    if (!question.trim() && attachments.length === 0) {
-      return { text: 'No he recibido ningún texto ni archivo.' };
-    }
-
-    return await processMessage(question, attachments, senderName, senderId);
-  }
-
   // Legacy Chat API format: type, message, space, user
   const { type, message, space, user } = eventBody;
   if (type) {
