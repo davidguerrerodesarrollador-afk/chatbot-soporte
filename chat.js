@@ -99,18 +99,18 @@ async function processMessage(question, attachments, senderName, senderId) {
     });
 
     // 5. Build response
-    let responseText = `${answer}\n\n`;
+    let responseText = `${answer}`;
     if (relevantFiles.length > 0) {
-      responseText += `*📚 Fuentes consultadas:*\n`;
+      responseText += `\n\nFuentes consultadas:\n`;
       relevantFiles.forEach(f => {
-        responseText += `• *${f.name}* (Relevancia: ${Math.round(f.score * 100)}%)\n`;
+        responseText += `- ${f.name} (Relevancia: ${Math.round(f.score * 100)}%)\n`;
       });
     }
     if (mediaParts.length > 0 && relevantFiles.length === 0) {
-      responseText += `*⚠️ Nota:* No encontré información específica en los manuales de Drive relacionada con lo que enviaste.`;
+      responseText += `\n\nNota: No encontré información específica en los manuales de Drive relacionada con lo que enviaste.`;
     }
 
-    return { text: responseText };
+    return { actionResponse: { type: 'NEW_MESSAGE', message: { text: responseText } } };
   } finally {
     // Clean up temp files
     for (const p of tempPaths) {
