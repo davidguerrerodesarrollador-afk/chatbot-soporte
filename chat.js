@@ -93,6 +93,15 @@ async function downloadChatAttachment(sourceUrl, outputPath) {
  * Process the user's question message, optionally with attached images/videos.
  */
 async function processMessage(question, attachments, senderName, senderId, spaceName) {
+  // Send "Procesando información..." immediately via Chat API
+  if (spaceName) {
+    try {
+      await sendChatMessage(spaceName, '🔍 Procesando información...');
+    } catch (e) {
+      console.log('[Chat] Failed to send initial message:', e.message);
+    }
+  }
+
   const tempDir = join(__dirname, 'temp');
   if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
 
@@ -241,27 +250,13 @@ export async function handleChatMessage(eventBody) {
 
     console.log(`[Google Chat] Message from ${senderName}: "${question.substring(0, 100)}" with ${attachments.length} attachment(s), space: ${spaceName}`);
 
-    // Process asynchronously: answer arrives via Chat API later
+    // Process asynchronously: answer arrives via Chat API
     if (question.trim() || attachments.length > 0) {
       processMessage(question, attachments, senderName, senderId, spaceName)
         .catch(err => console.error('[Chat] Async error:', err));
     }
 
-    // Return a card to prevent "no responde" notification
-    return {
-      cardsV2: [{
-        cardId: 'processing-card',
-        card: {
-          sections: [{
-            widgets: [{
-              textParagraph: {
-                text: '🔍 <b>Procesando información...</b><br><br><i>Buscando en los manuales técnicos...</i>'
-              }
-            }]
-          }]
-        }
-      }]
-    };
+    return null;
   }
 
   // Legacy Chat API format: type, message, space, user
