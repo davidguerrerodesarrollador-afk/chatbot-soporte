@@ -110,7 +110,16 @@ async function processMessage(question, attachments, senderName, senderId) {
       responseText += `\n\nNota: No encontré información específica en los manuales de Drive relacionada con lo que enviaste.`;
     }
 
-    return { text: responseText };
+    return {
+      cardsV2: [{
+        cardId: 'respuesta',
+        card: {
+          sections: [{
+            widgets: [{ textParagraph: { text: responseText } }]
+          }]
+        }
+      }]
+    };
   } finally {
     // Clean up temp files
     for (const p of tempPaths) {
@@ -187,15 +196,11 @@ export async function handleChatMessage(eventBody) {
       return { text: 'No he recibido ningún texto ni archivo. ¿En qué puedo ayudarte?' };
     }
 
-    // Process async - respond immediately so Google Chat doesn't time out
-    const quickReply = 'Consultando la documentación técnica, un momento por favor...';
-    processMessage(question, attachments, senderName, senderId)
-      .then(async (answer) => {
-        console.log('[Chat] Full answer ready, but cannot send async without API key');
-      })
-      .catch(err => console.error('[Chat] Async processing error:', err));
+    if (!question.trim() && attachments.length === 0) {
+      return { text: 'No he recibido ningún texto ni archivo.' };
+    }
 
-    return { text: quickReply };
+    return await processMessage(question, attachments, senderName, senderId);
   }
 
   // Legacy Chat API format: type, message, space, user
