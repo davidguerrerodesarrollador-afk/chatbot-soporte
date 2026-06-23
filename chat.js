@@ -110,21 +110,7 @@ async function processMessage(question, attachments, senderName, senderId) {
       responseText += `\n\nNota: No encontré información específica en los manuales de Drive relacionada con lo que enviaste.`;
     }
 
-    return {
-      renderActions: {
-        action: {
-          navigations: [{
-            pushCard: {
-              sections: [{
-                widgets: [{
-                  textParagraph: { text: responseText }
-                }]
-              }]
-            }
-          }]
-        }
-      }
-    };
+    return { chat: { text: responseText } };
   } finally {
     // Clean up temp files
     for (const p of tempPaths) {

@@ -83,9 +83,14 @@ app.get('/api/chat', (req, res) => {
 app.post('/api/chat', verifyGoogleChatToken, async (req, res) => {
   const tStart = Date.now();
   try {
-    // Respond immediately with "OK" to confirm the endpoint works
-    console.log('[Server] Chat received, responding immediately OK');
-    return res.json({ text: 'OK' });
+    console.log('[Server] Chat received. Processing...');
+    const response = await handleChatMessage(req.body);
+    if (response) {
+      console.log('[Server] Sending chat response');
+      return res.json(response);
+    }
+    console.log('[Server] No response from handler, sending empty 200');
+    return res.status(200).send();
   } catch (error) {
     console.error('[Server] Error handling Google Chat webhook:', error, 'after', Date.now() - tStart, 'ms');
     res.status(500).json({ error: 'Internal server error' });
