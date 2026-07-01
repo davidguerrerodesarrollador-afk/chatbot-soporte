@@ -159,7 +159,13 @@ async function processMessage(question, attachments, senderName, senderId, space
     if (relevantFiles.length > 0) {
       responseText += `\n\nFuentes consultadas:\n`;
       relevantFiles.forEach(f => {
-        responseText += `- ${f.name} (Relevancia: ${Math.round(f.score * 100)}%)\n`;
+        const isVideo = f.mimeType?.startsWith('video/');
+        if (isVideo) {
+          const videoUrl = `https://drive.google.com/file/d/${f.id}/view`;
+          responseText += `- ${f.name} (Relevancia: ${Math.round(f.score * 100)}%) - [Ver video](${videoUrl})\n`;
+        } else {
+          responseText += `- ${f.name} (Relevancia: ${Math.round(f.score * 100)}%)\n`;
+        }
       });
     }
     if (mediaParts.length > 0 && relevantFiles.length === 0) {

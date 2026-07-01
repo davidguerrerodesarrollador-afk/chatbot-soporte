@@ -174,13 +174,14 @@ function cosineSimilarity(vecA, vecB) {
 
 // Search similar files based on query embedding
 export async function searchSimilarFiles(queryEmbedding, limit = 3) {
-  const allFiles = await all('SELECT id, name, summary, embedding FROM files');
+  const allFiles = await all('SELECT id, name, mime_type, summary, embedding FROM files');
   const scoredFiles = allFiles.map(file => {
     const fileEmbedding = JSON.parse(file.embedding);
     const score = cosineSimilarity(queryEmbedding, fileEmbedding);
     return {
       id: file.id,
       name: file.name,
+      mimeType: file.mime_type,
       summary: file.summary,
       score: score
     };
