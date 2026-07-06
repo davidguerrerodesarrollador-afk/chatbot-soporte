@@ -67,7 +67,7 @@ export async function generateSummary(localFilePath, mimeType, fileName) {
     const prompt = `You are a professional documentation indexer. Analyze the provided file (Filename: "${fileName}") which is part of a machine manual and technical knowledge base.
 Provide a highly detailed, comprehensive, and structured technical description and summary of all instructions, specifications, troubleshooting steps, error codes, visual details, or operations shown or written in this file. 
 Ensure you capture every specific detail: machine models, error numbers (e.g. E03, F21), exact measurements, step-by-step resolution processes, parts list, and warnings.
-Write the entire summary in Spanish (español). Your summary will be used for a retrieval-augmented generation (RAG) system to answer operator questions. Do not write a generic summary; make it as technical and detailed as possible.
+If the file content is in any language other than Spanish, translate ALL content entirely into Spanish. The output summary must be 100% in Spanish. Your summary will be used for a retrieval-augmented generation (RAG) system to answer operator questions in Spanish. Do not write a generic summary; make it as technical and detailed as possible.
 Format your output using clean Markdown headers, bullet points, and tables if necessary.`;
 
     console.log(`[Gemini] Analyzing file "${fileName}" with model ${MODEL_NAME}...`);
