@@ -169,16 +169,9 @@ async function processMessage(question, attachments, senderName, senderId, space
     // 5. Build response text
     let responseText = `${answer}`;
     if (relevantFiles.length > 0) {
-      responseText += `\n\nFuentes consultadas:\n`;
-      relevantFiles.forEach(f => {
-        const isVideo = f.mimeType?.startsWith('video/');
-        if (isVideo) {
-          const videoUrl = `https://drive.google.com/file/d/${f.id}/view`;
-          responseText += `- ${f.name} (Relevancia: ${Math.round(f.score * 100)}%) - [Ver video](${videoUrl})\n`;
-        } else {
-          responseText += `- ${f.name} (Relevancia: ${Math.round(f.score * 100)}%)\n`;
-        }
-      });
+      const top = relevantFiles[0];
+      const fileUrl = `https://drive.google.com/file/d/${top.id}/view`;
+      responseText += `\n\nEl documento con más relación a tu consulta es: [${top.name}](${fileUrl})`;
     }
     if (mediaParts.length > 0 && relevantFiles.length === 0) {
       responseText += `\n\nNota: No encontré información específica en los manuales de Drive relacionada con lo que enviaste.`;
