@@ -171,7 +171,7 @@ async function processMessage(question, attachments, senderName, senderId, space
     if (relevantFiles.length > 0) {
       const top = relevantFiles[0];
       const fileUrl = `https://drive.google.com/file/d/${top.id}/view`;
-      responseText += `\n\nEl documento con más relación a tu consulta es: [${top.name}](${fileUrl})`;
+      responseText += `\n\nEl documento que más concuerda con tu consulta es: [${top.name}](${fileUrl})`;
     }
     if (mediaParts.length > 0 && relevantFiles.length === 0) {
       responseText += `\n\nNota: No encontré información específica en los manuales de Drive relacionada con lo que enviaste.`;
