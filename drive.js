@@ -142,3 +142,45 @@ export async function downloadFile(fileId, outputPath) {
     throw error;
   }
 }
+
+/**
+ * Export a Google Sheets file to CSV and save locally.
+ * @param {string} fileId The Google Drive File ID.
+ * @param {string} outputPath The local destination path (.csv).
+ * @returns {Promise<string>} The output path of the exported file.
+ */
+export async function exportSheetsToCsv(fileId, outputPath) {
+  const drive = getDriveClient();
+  if (!drive) {
+    throw new Error('Google Drive client is not initialized.');
+  }
+
+  try {
+    const outputDir = dirname(outputPath);
+    if (!fs.existsSync(outputDir)) {
+      fs.mkdirSync(outputDir, { recursive: true });
+    }
+
+    const dest = fs.createWriteStream(outputPath);
+    const response = await drive.files.export(
+      { fileId, mimeType: 'text/csv' },
+      { responseType: 'stream' }
+    );
+
+    return new Promise((resolve, reject) => {
+      response.data
+        .pipe(dest)
+        .on('finish', () => {
+          console.log(`[Drive] Exported Sheets file ${fileId} to CSV: ${outputPath}`);
+          resolve(outputPath);
+        })
+        .on('error', (err) => {
+          fs.unlink(outputPath, () => {});
+          reject(err);
+        });
+    });
+  } catch (error) {
+    console.error(`Error exporting Sheets file ${fileId}:`, error);
+    throw error;
+  }
+}

@@ -1,4 +1,4 @@
-import { listFilesInFolder, downloadFile } from './drive.js';
+import { listFilesInFolder, downloadFile, exportSheetsToCsv } from './drive.js';
 import { generateSummary, generateEmbedding } from './gemini.js';
 import { saveFile, deleteFile, getAllFiles } from './database.js';
 import fs from 'fs';
@@ -79,8 +79,13 @@ export async function syncFolder(folderId) {
         const tempFilePath = join(tempDir, `${driveFile.id}_${driveFile.name}`);
         
         try {
-          // Download file locally
-          await downloadFile(driveFile.id, tempFilePath);
+          const isSheets = driveFile.mimeType === 'application/vnd.google-apps.spreadsheet';
+          // Download or export file locally
+          if (isSheets) {
+            await exportSheetsToCsv(driveFile.id, tempFilePath);
+          } else {
+            await downloadFile(driveFile.id, tempFilePath);
+          }
           
           // Generate summary using Gemini
           const summary = await generateSummary(tempFilePath, driveFile.mimeType, driveFile.name);

@@ -67,6 +67,30 @@ ${textContent}`;
     return summary;
   }
 
+  // For CSV/text files (e.g. exported Google Sheets), read content directly
+  const isText = mimeType === 'text/csv' || mimeType === 'text/plain' || mimeType === 'text/tab-separated-values' || fileName.match(/\.(csv|tsv|txt)$/i);
+  if (isText) {
+    console.log(`[Gemini] Text/CSV file detected. Reading content locally...`);
+    const textContent = fs.readFileSync(localFilePath, 'utf-8');
+
+    const prompt = `You are a professional documentation indexer. The following is the content extracted from a data file (Filename: "${fileName}").
+Analyze ALL the data, rows, columns, and values shown. Provide a highly detailed, comprehensive, and structured technical description and summary of all information contained in this file.
+If the content is in any language other than Spanish, translate ALL content entirely into Spanish. The output summary must be 100% in Spanish. Your summary will be used for a retrieval-augmented generation (RAG) system to answer operator questions in Spanish. Do not write a generic summary; make it as technical and detailed as possible.
+Format your output using clean Markdown headers, bullet points, and tables if necessary.
+
+Contenido del archivo:
+${textContent}`;
+
+    console.log(`[Gemini] Analyzing Excel file "${fileName}" with model ${MODEL_NAME}...`);
+    const response = await ai.models.generateContent({
+      model: MODEL_NAME,
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    });
+    const summary = response.text || 'No summary could be generated.';
+    console.log(`[Gemini] Successfully generated summary for "${fileName}" (${summary.length} characters).`);
+    return summary;
+  }
+
   console.log(`[Gemini] Uploading "${fileName}" (${mimeType}) to Gemini File API...`);
   const uploadResult = await ai.files.upload({
     file: localFilePath,
