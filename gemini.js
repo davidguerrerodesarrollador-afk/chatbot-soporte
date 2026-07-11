@@ -1,5 +1,6 @@
 import { GoogleGenAI } from '@google/genai';
 import fs from 'fs';
+import XLSX from 'xlsx';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -34,6 +35,36 @@ export async function generateSummary(localFilePath, mimeType, fileName) {
   const ai = getGeminiClient();
   if (!ai) {
     throw new Error('Gemini API client is not initialized. Please set GEMINI_API_KEY in .env.');
+  }
+
+  // For Excel files, read content directly (File API doesn't support spreadsheets)
+  const isExcel = mimeType.includes('spreadsheet') || fileName.match(/\.xlsx?$/i);
+  if (isExcel) {
+    console.log(`[Gemini] Excel file detected. Reading content locally...`);
+    const workbook = XLSX.readFile(localFilePath);
+    let textContent = '';
+    workbook.SheetNames.forEach(sheetName => {
+      const sheet = workbook.Sheets[sheetName];
+      const csv = XLSX.utils.sheet_to_csv(sheet);
+      textContent += `--- Hoja: ${sheetName} ---\n${csv}\n\n`;
+    });
+
+    const prompt = `You are a professional documentation indexer. The following is the content extracted from a spreadsheet file (Filename: "${fileName}").
+Analyze ALL the data, rows, columns, and values shown. Provide a highly detailed, comprehensive, and structured technical description and summary of all information contained in this file.
+If the content is in any language other than Spanish, translate ALL content entirely into Spanish. The output summary must be 100% in Spanish. Your summary will be used for a retrieval-augmented generation (RAG) system to answer operator questions in Spanish. Do not write a generic summary; make it as technical and detailed as possible.
+Format your output using clean Markdown headers, bullet points, and tables if necessary.
+
+Contenido del archivo:
+${textContent}`;
+
+    console.log(`[Gemini] Analyzing Excel file "${fileName}" with model ${MODEL_NAME}...`);
+    const response = await ai.models.generateContent({
+      model: MODEL_NAME,
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    });
+    const summary = response.text || 'No summary could be generated.';
+    console.log(`[Gemini] Successfully generated summary for "${fileName}" (${summary.length} characters).`);
+    return summary;
   }
 
   console.log(`[Gemini] Uploading "${fileName}" (${mimeType}) to Gemini File API...`);
