@@ -1,8 +1,8 @@
-# G-Chat Troubleshooting Bot & Admin Dashboard
+# G-Chat Administrative Assistant Bot & Admin Dashboard
 
-Un chatbot de soporte técnico inteligente integrado en la plataforma de **Google Chat** para atender hasta 15 usuarios. El bot busca respuestas y procedimientos de mantenimiento exclusivamente a partir de documentos (texto, PDFs, imágenes y videos) guardados en una carpeta privada de **Google Drive**.
+Un chatbot administrativo inteligente integrado en la plataforma de **Google Chat** para atender hasta 15 usuarios. El bot busca respuestas y procedimientos administrativos, contables y financieros exclusivamente a partir de documentos (texto, PDFs, imágenes y videos) guardados en una carpeta privada de **Google Drive**.
 
-El sistema incluye una base de datos local SQLite con soporte vectorial RAG para búsquedas de similitud semántica y un **Panel de Administración Web** de diseño premium (glassmorphism) para controlar el bot en tiempo real.
+El sistema incluye una base de datos local SQLite con soporte vectorial RAG para búsquedas de similitud semántica y un **Panel de Administración Web** de estilo corporativo Office/Excel para controlar el bot en tiempo real.
 
 ---
 
@@ -96,9 +96,9 @@ Para que el bot pueda responder a los usuarios las 24 horas, debes hospedar el s
 1. Abre la **Google Cloud Console** de tu proyecto.
 2. Busca la **Google Chat API** en el buscador superior y entra en **Configuración**.
 3. Rellena los datos de tu Bot:
-    *   **Nombre de la aplicación**: Asistente de Soporte Técnico.
+    *   **Nombre de la aplicación**: Asistente Administrativo.
     *   **Avatar**: Sube un icono de robot.
-    *   **Descripción**: Bot de resolución de problemas basados en manuales de Drive.
+    *   **Descripción**: Bot de consultas administrativas basadas en la documentación de Drive.
 4. En **Funciones interactivas (Interactive features)**, marca **Habilitar características interactivas**.
 5. En **Configuración de conexión**:
     *   Selecciona **URL de HTTP**.
@@ -114,7 +114,7 @@ Para que el bot pueda responder a los usuarios las 24 horas, debes hospedar el s
 
 ## 💻 Características del Panel de Administración
 *   **Métricas en Vivo**: Revisa el número de archivos indexados, la cantidad de preguntas hechas por el personal y el estado del bot.
-*   **Directorio de Conocimiento**: Explora los archivos de Drive que el bot ha "aprendido". Haz clic en cualquier fila para leer el resumen estructurado y detallado que hizo Gemini de ese manual, imagen o video.
+*   **Directorio de Conocimiento**: Explora los archivos de Drive que el bot ha "aprendido". Haz clic en cualquier fila para leer el resumen estructurado y detallado que hizo Gemini de ese documento, imagen o video.
 *   **Sincronización Manual**: Haz clic en "Sincronizar Drive" en cualquier momento para forzar un escaneo inmediato de la carpeta de Drive sin esperar a la sincronización programada diaria (1:00 AM).
-*   **Historial de Auditoría**: Revisa exactamente qué usuario de Google Chat preguntó algo, qué respuesta le dio el bot y qué manuales leyó el RAG para responderle.
-*   **Playground**: Un chat interactivo privado en el panel donde puedes hacerle preguntas al bot de soporte técnico y ver qué manuales se están seleccionando y con qué nivel de similitud semántica.
+*   **Historial de Auditoría**: Revisa exactamente qué usuario de Google Chat preguntó algo, qué respuesta le dio el bot y qué documentos leyó el RAG para responderle.
+*   **Playground**: Un chat interactivo privado en el panel donde puedes hacerle preguntas al bot administrativo y ver qué documentos se están seleccionando y con qué nivel de similitud semántica.

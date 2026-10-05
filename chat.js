@@ -136,7 +136,7 @@ async function processMessage(question, attachments, senderName, senderId, space
   // 2.5 If media attached but no docs found by text, use media description to search
   if (mediaParts.length > 0 && relevantFiles.length === 0) {
     try {
-      const descAnswer = await answerQuestion('Describe en detalle el contenido técnico de este archivo. Genera palabras clave técnicas específicas.', [], mediaParts);
+      const descAnswer = await answerQuestion('Describe en detalle el contenido de este archivo. Genera palabras clave específicas.', [], mediaParts);
       const descEmbedding = await generateEmbedding(descAnswer);
       const descMatchedFiles = await searchSimilarFiles(descEmbedding, 3);
       relevantFiles = descMatchedFiles.filter(f => f.score >= 0.2);
@@ -174,7 +174,7 @@ async function processMessage(question, attachments, senderName, senderId, space
       responseText += `\n\nEl documento que más concuerda con tu consulta es: [${top.name}](${fileUrl})`;
     }
     if (mediaParts.length > 0 && relevantFiles.length === 0) {
-      responseText += `\n\nNota: No encontré información específica en los manuales de Drive relacionada con lo que enviaste.`;
+      responseText += `\n\nNota: No encontré información específica en la documentación de Drive relacionada con lo que enviaste. Te recomiendo contactar al área responsable.`;
     }
 
     // Send answer via Chat API
@@ -279,15 +279,16 @@ export async function handleChatMessage(eventBody) {
       const spaceType = space?.type === 'DM' ? 'Direct Message' : 'Space';
       console.log(`Bot added to space: ${space?.name} (${spaceType})`);
       return {
-        text: `¡Hola! Soy tu Asistente de Soporte Técnico.
-He sido creado para ayudarte a resolver problemas en nuestras máquinas.
+        text: `¡Hola! Soy tu Asistente Administrativo.
+He sido creado para ayudarte con las dudas y procedimientos internos de la organización.
 
 Puedes enviarme:
-• Una descripción del problema
-• Una foto del error o la máquina
+• Una consulta administrativa, contable o financiera
+• Una descripción de tu duda o trámite
+• Una foto o captura de un documento o comprobante
 • Un video mostrando el inconveniente
 
-Yo analizaré todo junto con los manuales para darte una solución detallada.`
+Yo analizaré todo junto con la documentación disponible para darte una respuesta detallada.`
       };
     }
 

@@ -119,10 +119,10 @@ ${textContent}`;
     }
 
     // Prompt Gemini for an exhaustive summary
-    const prompt = `You are a professional documentation indexer. Analyze the provided file (Filename: "${fileName}") which is part of a machine manual and technical knowledge base.
-Provide a highly detailed, comprehensive, and structured technical description and summary of all instructions, specifications, troubleshooting steps, error codes, visual details, or operations shown or written in this file. 
-Ensure you capture every specific detail: machine models, error numbers (e.g. E03, F21), exact measurements, step-by-step resolution processes, parts list, and warnings.
-If the file content is in any language other than Spanish, translate ALL content entirely into Spanish. The output summary must be 100% in Spanish. Your summary will be used for a retrieval-augmented generation (RAG) system to answer operator questions in Spanish. Do not write a generic summary; make it as technical and detailed as possible.
+    const prompt = `You are a professional documentation indexer. Analyze the provided file (Filename: "${fileName}") which is part of the organization's internal administrative knowledge base.
+Provide a highly detailed, comprehensive, and structured description and summary of all procedures, policies, regulations, requirements, steps, deadlines, amounts, forms, requirements and details shown or written in this file.
+Ensure you capture every specific detail: names of areas or departments, applicable concepts (e.g. viáticos, facturas, vacaciones, compras), exact figures, deadlines, step-by-step resolution processes, required documents or forms, and warnings.
+If the file content is in any language other than Spanish, translate ALL content entirely into Spanish. The output summary must be 100% in Spanish. Your summary will be used for a retrieval-augmented generation (RAG) system to answer employee questions in Spanish. Do not write a generic summary; make it as specific and detailed as possible.
 Format your output using clean Markdown headers, bullet points, and tables if necessary.`;
 
     console.log(`[Gemini] Analyzing file "${fileName}" with model ${MODEL_NAME}...`);
@@ -236,20 +236,20 @@ export async function answerQuestion(question, sources, mediaParts = []) {
 
   let context = '';
   if (sources.length === 0) {
-    context = 'No se encontró documentación técnica en la base de datos.';
+    context = 'No se encontró documentación en la base de datos.';
   } else {
     context = sources.map((source, index) => {
       return `--- DOCUMENTO ${index + 1}: ${source.name} ---\n${source.summary}\n`;
     }).join('\n');
   }
 
-  const systemPrompt = `Eres un asistente profesional de mantenimiento de máquinas. Tu trabajo es ayudar a los operarios de fábrica a resolver problemas con las máquinas.
-Debes responder la pregunta del usuario usando ÚNICAMENTE los resúmenes de la documentación técnica proporcionados y las imágenes o videos que el usuario haya adjuntado.
+  const systemPrompt = `Eres un asistente administrativo interno de la organización. Tu trabajo es resolver las dudas de los colaboradores sobre temas administrativos, contables, financieros, de recursos humanos, de compras, de inventario, de facturación y cualquier otro procedimiento interno documentado.
+Debes responder la pregunta del usuario usando ÚNICAMENTE los resúmenes de la documentación proporcionados y las imágenes o videos que el usuario haya adjuntado.
 Reglas:
-1. Apóyate estrictamente en el contexto proporcionado y en el contenido de las imágenes/videos. Si el contexto no contiene la respuesta, dile amablemente al usuario que no has encontrado la solución en los manuales subidos. No inventes ni alucines respuestas.
-2. Si la pregunta del usuario no está relacionada con la documentación (por ejemplo, preguntas de conversación general o programación), recuérdale que eres un asistente de mantenimiento de máquinas y solo puedes ayudar con problemas documentados en la carpeta del administrador.
-3. Sé profesional, claro y directo. Desglosa las soluciones en pasos numerados claros e instrucciones paso a paso.
-4. Referencia los nombres de los documentos (ej: [CNC-Router-Manual.pdf]) de donde obtuviste la información.
+1. Apóyate estrictamente en el contexto proporcionado y en el contenido de las imágenes/videos. Si el contexto no contiene la respuesta, dile amablemente al usuario que no has encontrado la información en los documentos subidos y que contacte al área responsable. No inventes ni alucines respuestas, importes, plazos, políticas ni nombres de personas.
+2. Si la pregunta del usuario no está relacionada con la documentación (por ejemplo, conversación general o temas técnicos de programación), recuérdale con amabilidad que eres un asistente administrativo y que solo puedes ayudar con procedimientos e información documentados en la carpeta del administrador. Nunca te describas como asistente de mantenimiento de máquinas ni de soporte técnico.
+3. Sé profesional, claro y directo. Desglosa las respuestas en pasos numerados claros cuando el procedimiento lo requiera.
+4. Referencia los nombres de los documentos (ej: [Politica-de-Gastos.pdf]) de donde obtuviste la información.
 5. Responde SIEMPRE en español, incluso si el usuario te pregunta en otro idioma.
 
 Contexto de la documentación:

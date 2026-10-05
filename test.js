@@ -45,11 +45,11 @@ async function runTests() {
     const mockEmbedding = Array(768).fill(0).map((_, i) => (i === 10 ? 0.8 : i === 20 ? 0.6 : 0.05));
     const mockFile = {
       id: 'mock_drive_file_id_123',
-      name: 'Manual_Router_CNC.pdf',
+      name: 'Politica-de-Gastos.pdf',
       mimeType: 'application/pdf',
       modifiedTime: new Date().toISOString(),
       size: 1048576,
-      summary: 'Este es el manual oficial de mantenimiento del Router CNC Modelo X-100. Contiene instrucciones para corregir el error de husillo E03 limpiando los conectores.',
+      summary: 'Política interna de gastos y viáticos. Los gastos menores a 500 USD se approve con solo el visto bueno del jefe de área; los mayores requieren autorización de Finanzas y comprobante fiscal original.',
       embedding: mockEmbedding
     };
     
