@@ -14,8 +14,8 @@
     .test-card { padding: 30px; }
     .test-card h2 { margin-top: 0; }
     .preview-area { margin: 15px 0; }
-    .preview-area img, .preview-area video { max-width: 100%; max-height: 300px; border-radius: 8px; }
-    .result-area { background: rgba(0,0,0,0.2); border-radius: 8px; padding: 15px; white-space: pre-wrap; margin-top: 15px; display: none; }
+    .preview-area img, .preview-area video { max-width: 100%; max-height: 300px; border-radius: 4px; }
+    .result-area { background: var(--bg-subtle); border: 1px solid var(--border-light); border-radius: 4px; padding: 15px; white-space: pre-wrap; margin-top: 15px; display: none; }
     .loading { display: none; text-align: center; padding: 20px; }
     .loading.active { display: block; }
     .back-link { margin-bottom: 20px; display: block; }
@@ -31,12 +31,12 @@
       <form id="test-form">
         <div class="input-group">
           <label for="question">Texto (opcional)</label>
-          <textarea id="question" rows="3" placeholder="Describe el problema o error que ves en la imagen/video..." style="width:100%;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,0.1);background:rgba(0,0,0,0.2);color:#fff;"></textarea>
+          <textarea id="question" rows="3" placeholder="Describe el problema o error que ves en la imagen/video..." style="width:100%;padding:10px;border-radius:4px;border:1px solid var(--border-default);background:var(--bg-inset);color:var(--text-main);font-family:var(--font-sans);"></textarea>
         </div>
 
         <div class="input-group" style="margin-top:15px;">
           <label for="file">Archivo (imagen o video)</label>
-          <input type="file" id="file" accept="image/*,video/*" style="width:100%;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,0.1);background:rgba(0,0,0,0.2);color:#fff;">
+          <input type="file" id="file" accept="image/*,video/*" style="width:100%;padding:10px;border-radius:4px;border:1px solid var(--border-default);background:var(--bg-subtle);color:var(--text-main);">
           <div class="preview-area" id="preview"></div>
         </div>
 
