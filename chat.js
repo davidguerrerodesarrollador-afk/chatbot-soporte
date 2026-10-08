@@ -219,7 +219,7 @@ async function processMessage(question, attachments, senderName, senderId, space
   // 2.5 If media attached but no docs found by text, use media description to search
   if (mediaParts.length > 0 && relevantFiles.length === 0) {
     try {
-      const descAnswer = await answerQuestion('Describe en detalle el contenido de este archivo. Genera palabras clave específicas.', [], mediaParts);
+      const descAnswer = await answerQuestion('Describe en detalle el contenido de este archivo. Genera palabras clave específicas.', [], mediaParts, { describeOnly: true });
       const descEmbedding = await generateEmbedding(descAnswer);
       const descMatchedFiles = await searchSimilarFiles(descEmbedding, 3);
       relevantFiles = descMatchedFiles.filter(f => f.score >= 0.2);

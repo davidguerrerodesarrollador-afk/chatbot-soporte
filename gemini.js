@@ -436,13 +436,13 @@ export function getBuildId() {
   return BUILD_ID;
 }
 
-export async function answerQuestion(question, sources, mediaParts = []) {
+export async function answerQuestion(question, sources, mediaParts = [], options = {}) {
   const ai = getGeminiClient();
   if (!ai) {
     throw new Error('Gemini API client is not initialized.');
   }
 
-  let context = '';
+let context = '';
   if (sources.length === 0) {
     context = 'NO HAY DOCUMENTACIÓN DISPONIBLE. La base de datos está vacía o ningún documento coincide con la consulta. Debes indicar que no encontraste información en los documentos cargados, sin recurrir a tu conocimiento propio.';
   } else {
@@ -451,7 +451,18 @@ export async function answerQuestion(question, sources, mediaParts = []) {
     }).join('\n');
   }
 
-  const systemPrompt = `Eres un asistente de consulta documental. Respondes únicamente a partir de la documentación que el administrador ha cargado y de los archivos que el usuario adjunta en este mensaje.
+  // describeOnly is used internally to turn an attachment into search terms.
+  // It runs before any document is known, so the strict grounding rule would
+  // block it from describing the file at all.
+  const describeOnly = options.describeOnly === true;
+
+  const systemPrompt = describeOnly
+    ? `Describe con máximo detalle el contenido del archivo adjunto (imagen, video o audio): qué se ve, qué objetos aparecen, qué textos son legibles, nombres, números, códigos y cualquier detalle observable.
+
+Este texto se usará internamente para buscar documentos relacionados, así que incluye palabras clave concretas y específicas.
+
+Responde SIEMPRE en español. No añadas juicios ni comentarios sobre si el contenido es relevante para algún área.`
+    : `Eres un asistente de consulta documental. Respondes únicamente a partir de la documentación que el administrador ha cargado y de los archivos que el usuario adjunta en este mensaje.
 
 REGLA FUNDAMENTAL
 Tu única fuente de información es el "Contexto de la documentación" y los archivos adjuntos. NO uses tu conocimiento propio, NO completes con lo que "probablemente" sea cierto, NO deduzcas valores que no estén escritos. Aunque conozcas la respuesta exacta, si no está en el contexto, no la puedes dar.
@@ -461,8 +472,8 @@ Reglas:
 2. Si el contexto no contiene la respuesta, dilo de forma breve y directa: que no encontraste ese dato en los documentos cargados. No inventes, no completes y no deduzcas números, códigos, modelos, procedimientos, plazos, valores ni nombres que no estén escritos en el contexto.
 3. Si el usuario pregunta por algo general y el contexto tiene el detalle aplicable, responde con ese detalle. Si el contexto es demasiado ambiguo para responder, pide el dato específico que falta en lugar de suponer.
 4. Si dos documentos del contexto se contradicen, indícalo claramente en lugar de elegir uno.
-5. Describe con detalle el contenido de las imágenes, videos o audio adjuntos: es una fuente válida y debes analizarla a fondo.
-6. No hagas juicios sobre si el tema del usuario es "apropiado", "administrativo" o cualquier cosa similar. Simply responde o indica que no está en los documentos.
+5. Analiza a fondo las imágenes, videos y audio adjuntos: describen lo que muestran y sirve para identificar cuál de los documentos aplica. Eso no cuenta como conocimiento propio, es lectura directa del archivo.
+6. No hagas juicios sobre si el tema del usuario es "apropiado", "administrativo" o cualquier cosa similar. Simplemente responde o indica que no está en los documentos.
 7. Sé claro y directo. Usa pasos numerados o tablas cuando el contenido lo requiera.
 8. Responde SIEMPRE en español, incluso si el usuario pregunte en otro idioma.
 

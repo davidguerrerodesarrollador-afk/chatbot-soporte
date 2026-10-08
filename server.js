@@ -236,7 +236,7 @@ app.post('/api/admin/playground', apiLimiter, verifyAdmin, optionalUpload, async
       try {
         const desc = await answerQuestion(
           'Describe en detalle el contenido de este archivo. Genera palabras clave específicas.',
-          [], mediaParts
+          [], mediaParts, { describeOnly: true }
         );
         const descEmbedding = await generateEmbedding(desc);
         const descMatched = await searchSimilarFiles(descEmbedding, 3);
