@@ -9,6 +9,47 @@ let aiClient = null;
 const MODEL_NAME = 'gemini-2.5-flash';
 const EMBEDDING_MODEL = 'gemini-embedding-2';
 
+/**
+ * Normalize a MIME type to one the Gemini File API accepts.
+ * Google Drive reports container formats Gemini doesn't list (e.g. .jfif,
+ * .heic, .m4a), and the upload is rejected outright with an opaque error.
+ * The bytes are identical to the supported format, so remapping is safe.
+ */
+function normalizeMimeType(mimeType, fileName = '') {
+  const raw = (mimeType || '').toLowerCase();
+  const ext = (fileName.match(/\.([a-z0-9]+)$/i)?.[1] || '').toLowerCase();
+
+  const byExtension = {
+    jfif: 'image/jpeg', jpe: 'image/jpeg', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+    heic: 'image/heic', heif: 'image/heif',
+    m4a: 'audio/mp4', aac: 'audio/mp4', opus: 'audio/ogg', oga: 'audio/ogg',
+    wav: 'audio/wav', mp3: 'audio/mpeg',
+    m4v: 'video/mp4', mov: 'video/quicktime', mkv: 'video/x-matroska',
+  };
+
+  const aliases = {
+    'image/jfif': 'image/jpeg',
+    'image/jpg': 'image/jpeg',
+    'image/pjpeg': 'image/jpeg',
+    'audio/mp3': 'audio/mpeg',
+    'audio/x-m4a': 'audio/mp4',
+    'audio/m4a': 'audio/mp4',
+    'audio/x-wav': 'audio/wav',
+    'audio/vnd.wave': 'audio/wav',
+    'audio/x-flac': 'audio/flac',
+    'video/x-m4v': 'video/mp4',
+  };
+
+  if (aliases[raw]) return aliases[raw];
+  // A bare extension (e.g. "jpg") or a generic type; the extension is more reliable.
+  if (!raw || raw === 'application/octet-stream' || (!raw.includes('/') && raw !== 'application/pdf')) {
+    if (byExtension[ext]) return byExtension[ext];
+    if (ext === 'csv' || ext === 'tsv' || ext === 'txt') return 'text/plain';
+    if (ext === 'pdf') return 'application/pdf';
+  }
+  return mimeType;
+}
+
 // Initialize Gemini Client
 export function getGeminiClient() {
   if (aiClient) return aiClient;
@@ -91,17 +132,22 @@ ${textContent}`;
     return summary;
   }
 
-  console.log(`[Gemini] Uploading "${fileName}" (${mimeType}) to Gemini File API...`);
+  const effectiveMimeType = normalizeMimeType(mimeType, fileName);
+  if (effectiveMimeType !== mimeType) {
+    console.log(`[Gemini] Normalized MIME "${mimeType}" -> "${effectiveMimeType}" for "${fileName}"`);
+  }
+
+  console.log(`[Gemini] Uploading "${fileName}" (${effectiveMimeType}) to Gemini File API...`);
   const uploadResult = await ai.files.upload({
     file: localFilePath,
-    mimeType: mimeType,
+    mimeType: effectiveMimeType,
   });
 
   console.log(`[Gemini] Upload complete. File URI: ${uploadResult.uri}. Name: ${uploadResult.name}`);
 
   try {
     // Wait for the file to be processed if it is a video
-    if (mimeType.startsWith('video/')) {
+    if (effectiveMimeType.startsWith('video/')) {
       console.log(`[Gemini] Video file detected. Waiting for processing...`);
       let fileState = await ai.files.get({ name: uploadResult.name });
       let attempts = 0;
@@ -195,6 +241,9 @@ export async function generateEmbedding(text) {
 export async function prepareMediaPart(localFilePath, mimeType) {
   const ai = getGeminiClient();
   if (!ai) throw new Error('Gemini API client is not initialized.');
+
+  const fileName = localFilePath.split(/[\\/]/).pop() || '';
+  mimeType = normalizeMimeType(mimeType, fileName);
 
   // Images: send as inline base64 data
   if (mimeType.startsWith('image/')) {

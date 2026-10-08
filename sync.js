@@ -25,6 +25,9 @@ export function getSyncStatus() {
   };
 }
 
+// Google Drive can report container formats the Gemini File API rejects
+// (e.g. .jfif, .heic, .m4a). gemini.js normalizes those before uploading.
+
 /**
  * Sync the local database with the Google Drive folder contents.
  * @param {string} folderId The Google Drive Folder ID.
@@ -125,13 +128,20 @@ export async function syncFolder(folderId) {
 
     lastSyncTime = new Date().toISOString();
     lastSyncResult = {
-      success: true,
+      success: results.failed.length === 0,
       addedCount: results.added.length,
       updatedCount: results.updated.length,
       deletedCount: results.deleted.length,
       failedCount: results.failed.length,
       errors: results.failed
     };
+
+    if (results.failed.length > 0) {
+      console.warn(`[Sync] ${results.failed.length} file(s) could not be indexed:`);
+      for (const f of results.failed) {
+        console.warn(`[Sync]   - "${f.name}": ${f.error}`);
+      }
+    }
 
     console.log(`[Sync] Sync completed successfully. Added: ${results.added.length}, Updated: ${results.updated.length}, Deleted: ${results.deleted.length}, Failed: ${results.failed.length}`);
     return results;

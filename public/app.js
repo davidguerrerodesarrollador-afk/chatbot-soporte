@@ -444,7 +444,16 @@ function startPollingSyncStatus() {
           const res = data.sync.lastSyncResult;
           alert(`Sincronización Completada:\n- Agregados: ${res.addedCount}\n- Actualizados: ${res.updatedCount}\n- Eliminados: ${res.deletedCount}`);
         } else if (data.sync.lastSyncResult) {
-          alert(`Sincronización Fallida: ${data.sync.lastSyncResult.error}`);
+          const res = data.sync.lastSyncResult;
+          let msg = `Sincronización con errores (${res.failedCount || 0} archivo(s) no se pudieron indexar):\n\n`;
+          msg += `- Agregados: ${res.addedCount || 0}\n- Actualizados: ${res.updatedCount || 0}\n\n`;
+          msg += 'Archivos con problema:\n';
+          (res.errors || []).slice(0, 8).forEach((f) => {
+            msg += `• ${f.name}: ${f.error}\n`;
+          });
+          if ((res.errors || []).length > 8) msg += `• ...y ${res.errors.length - 8} más\n`;
+          if (!res.errors && res.error) msg += res.error;
+          alert(msg);
         }
       }
     } catch (e) {
