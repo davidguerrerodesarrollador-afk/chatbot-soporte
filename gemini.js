@@ -11,7 +11,7 @@ const EMBEDDING_MODEL = 'gemini-embedding-2';
 
 // Bumped whenever MIME handling changes, so error messages reveal which build
 // is deployed instead of guessing.
-const BUILD_ID = 'mime-magicbytes-2';
+const BUILD_ID = 'config-mime-3';
 
 /**
  * Detect a MIME type from the file's magic bytes.
@@ -222,9 +222,13 @@ ${textContent}`;
   console.log(`[Gemini] Uploading "${fileName}" (${effectiveMimeType}) to Gemini File API...`);
   let uploadResult;
   try {
+    // The SDK reads mimeType from params.config (see Files.upload ->
+    // uploadFile(params.file, params.config)). Passing it at the top level
+    // is silently ignored and the SDK then infers it from the file extension,
+    // which fails for extensions like .jfif.
     uploadResult = await ai.files.upload({
       file: localFilePath,
-      mimeType: effectiveMimeType,
+      config: { mimeType: effectiveMimeType }
     });
   } catch (uploadError) {
     // Surface what we detected: this distinguishes a MIME problem from a
@@ -357,8 +361,12 @@ export async function prepareMediaPart(localFilePath, mimeType) {
     }
   }
 
-  // Videos and large audio files: upload to File API and reference by URI
-  const uploadResult = await ai.files.upload({ file: localFilePath, mimeType });
+  // Videos and large audio files: upload to File API and reference by URI.
+  // mimeType must live inside `config` or the SDK ignores it.
+  const uploadResult = await ai.files.upload({
+    file: localFilePath,
+    config: { mimeType }
+  });
 
   let fileState = await ai.files.get({ name: uploadResult.name });
   let attempts = 0;
