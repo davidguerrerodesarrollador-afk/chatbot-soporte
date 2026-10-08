@@ -38,6 +38,9 @@ const MediaCapture = (() => {
           <div id="media-rec-indicator" class="media-rec-indicator hide">
             <span class="media-rec-dot"></span> <span id="media-rec-time">00:00</span>
           </div>
+          <button type="button" class="media-flip hide" id="media-flip" title="Cambiar de cámara" aria-label="Cambiar de cámara">
+            <i class="fa-solid fa-rotate"></i>
+          </button>
         </div>
 
         <div id="media-preview" class="media-preview hide"></div>
@@ -78,6 +81,7 @@ const MediaCapture = (() => {
     buildUI();
 
     document.getElementById('media-close').addEventListener('click', close);
+    document.getElementById('media-flip').addEventListener('click', switchCamera);
     document.getElementById('media-capture-btn').addEventListener('click', onCaptureClick);
     document.getElementById('media-file-btn').addEventListener('click', () => {
       const input = document.createElement('input');
@@ -124,52 +128,98 @@ const MediaCapture = (() => {
     stream.getAudioTracks().forEach((t) => t.stop());
   }
 
-  async function startStream() {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      throw new Error('Este navegador no permite el uso de la cámara. Abre la página en un navegador moderno (Chrome, Edge, Safari).');
-    }
-    if (stream) return;
+  // Prefer the rear camera on phones, falling back through increasingly loose
+// constraints until something produces a usable image.
+const VIDEO_PREFERENCES = [
+  { exact: 'environment' },
+  { ideal: 'environment' },
+  undefined,
+  { exact: 'user' },
+  { ideal: 'user' },
+];
 
-    const wants = captureMode === 'audio'
-      ? { audio: true }
-      : { video: true, audio: captureMode === 'video' };
+async function startStream(preferredIndex = 0) {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    throw new Error('Este navegador no permite el uso de la cámara. Abre la página en un navegador moderno (Chrome, Edge, Safari).');
+  }
+  if (stream) return;
 
+  const isAudio = captureMode === 'audio';
+  const attempts = isAudio
+    ? [{ audio: true }]
+    : VIDEO_PREFERENCES.map((facingMode) => ({
+        video: facingMode ? { facingMode } : true,
+        audio: captureMode === 'video',
+      }));
+
+  const order = isAudio
+    ? attempts
+    : [...attempts.slice(preferredIndex), ...attempts.slice(0, preferredIndex)];
+
+  let lastError = null;
+  for (const constraints of order) {
     try {
-      stream = await navigator.mediaDevices.getUserMedia(wants);
+      const candidate = await navigator.mediaDevices.getUserMedia(constraints);
+      // A dead track renders black, so reject it and keep trying.
+      if (!isAudio && !(await videoIsLive(candidate))) {
+        candidate.getTracks().forEach((t) => t.stop());
+        continue;
+      }
+      stream = candidate;
+      activeFacingIndex = Math.max(0, attempts.findIndex((a) => JSON.stringify(a) === JSON.stringify(constraints)));
+      return;
     } catch (err) {
-      // Fall back to the other camera if the preferred one is unavailable
-      if (captureMode !== 'audio') {
-        try {
-          stream = await navigator.mediaDevices.getUserMedia(
-            captureMode === 'photo' ? { video: true } : { video: true, audio: true }
-          );
-        } catch {
-          throw new Error(describeMediaError(err));
-        }
-      } else {
-        throw new Error(describeMediaError(err));
-      }
+      lastError = err;
     }
+  }
+  throw new Error(describeMediaError(lastError || {}));
+}
 
-    // Some mobile browsers honor facingMode but hand back a track that never
-    // produces frames, showing a black screen. Retry with a bare video track.
-    if (captureMode !== 'audio' && !videoIsLive(stream)) {
-      stopStream();
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: true });
-      } catch {
-        // keep the original stream, it may still work
-      }
+function onStreamReady() {
+  const video = document.getElementById('media-video');
+  video.srcObject = stream;
+  video.classList.toggle('hide', captureMode === 'audio');
+  document.getElementById('media-placeholder').classList.toggle('hide', captureMode !== 'audio');
+  video.play().catch(() => {});
+  updateFlipButton();
+}
+
+// Only offer the flip control when the device exposes more than one camera
+async function updateFlipButton() {
+    const btn = document.getElementById('media-flip');
+    if (!btn) return;
+    if (captureMode === 'audio' || !navigator.mediaDevices?.enumerateDevices) {
+      btn.classList.add('hide');
+      return;
     }
-
-    const video = document.getElementById('media-video');
-    video.srcObject = stream;
-    video.classList.toggle('hide', captureMode === 'audio');
-    document.getElementById('media-placeholder').classList.toggle('hide', captureMode !== 'audio');
-    video.play().catch(() => {});
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const cameras = devices.filter((d) => d.kind === 'videoinput');
+      btn.classList.toggle('hide', cameras.length < 2);
+    } catch {
+      btn.classList.add('hide');
+    }
   }
 
-  function describeMediaError(err) {
+  // The <video> element can report 0x0 until the first frame decodes.
+function waitForVideoFrame(video, timeoutMs = 3000) {
+  if (video.videoWidth > 0 && video.videoHeight > 0) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(video.videoWidth > 0 && video.videoHeight > 0);
+    };
+    const timer = setTimeout(done, timeoutMs);
+    video.addEventListener('loadeddata', done, { once: true });
+    video.addEventListener('resize', done, { once: true });
+    video.addEventListener('canplay', done, { once: true });
+  });
+}
+
+function describeMediaError(err) {
     const name = err?.name || '';
     if (name === 'NotAllowedError' || name === 'SecurityError') {
       return 'Permiso denegado. Habilita el acceso a la cámara o al micrófono en los permisos del navegador y vuelve a intentar.';
@@ -188,13 +238,57 @@ const MediaCapture = (() => {
 
   // A track exists but never delivers frames, so the preview would be black.
 function videoIsLive(activeStream) {
-  if (!activeStream) return false;
+  if (!activeStream) return Promise.resolve(false);
   const track = activeStream.getVideoTracks()[0];
-  if (!track) return false;
+  if (!track) return Promise.resolve(false);
+  if (track.readyState !== 'live') return Promise.resolve(false);
+
   const settings = track.getSettings ? track.getSettings() : {};
-  if (settings.width === 0 || settings.height === 0) return false;
-  return track.readyState === 'live';
+  if (settings.width === 0 || settings.height === 0) return Promise.resolve(false);
+
+  // Some Android builds report non-zero dimensions yet still render black for
+  // a moment. Wait briefly for real dimensions before accepting the track.
+  return new Promise((resolve) => {
+    const probe = document.createElement('video');
+    probe.muted = true;
+    probe.playsInline = true;
+    probe.srcObject = activeStream;
+    let settled = false;
+    const done = (ok) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      probe.srcObject = null;
+      resolve(ok);
+    };
+    const timer = setTimeout(() => done(false), 2500);
+    probe.addEventListener('loadeddata', () => done(probe.videoWidth > 0 && probe.videoHeight > 0), { once: true });
+    probe.addEventListener('error', () => done(false), { once: true });
+    probe.play().catch(() => done(false));
+  });
 }
+
+let activeFacingIndex = 0;
+
+// Flip between the front and rear camera.
+async function switchCamera() {
+  if (captureMode === 'audio' || !stream) return;
+  const video = document.getElementById('media-video');
+  if (recorder && recorder.state === 'recording') return;
+
+  const wasHidden = video.classList.contains('hide');
+  stopStream();
+  try {
+    // Move past the current attempt so we land on the other camera
+    await startStream(activeFacingIndex + 1);
+    onStreamReady();
+  } catch (err) {
+    alert(err.message);
+    return;
+  }
+  if (wasHidden) video.classList.add('hide');
+}
+
 
 function stopStream() {
     if (stream) {
@@ -241,12 +335,15 @@ function stopStream() {
   async function takePhoto() {
     try {
       await startStream();
+      onStreamReady();
     } catch (err) {
       alert(err.message);
       return;
     }
     const video = document.getElementById('media-video');
     const canvas = document.getElementById('media-canvas');
+    // Wait for real dimensions, otherwise a slow track yields a black frame.
+    await waitForVideoFrame(video);
     canvas.width = video.videoWidth || 1280;
     canvas.height = video.videoHeight || 720;
     canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
@@ -261,6 +358,7 @@ function stopStream() {
   async function startRecording(label) {
     try {
       await startStream();
+      onStreamReady();
     } catch (err) {
       alert(err.message);
       return;

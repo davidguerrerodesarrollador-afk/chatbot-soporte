@@ -299,11 +299,18 @@ ${textContent}`;
     }
 
     // Prompt Gemini for an exhaustive summary
-    const prompt = `You are a professional documentation indexer. Analyze the provided file (Filename: "${fileName}") which is part of the organization's internal administrative knowledge base.
-Provide a highly detailed, comprehensive, and structured description and summary of all procedures, policies, regulations, requirements, steps, deadlines, amounts, forms, requirements and details shown or written in this file.
-Ensure you capture every specific detail: names of areas or departments, applicable concepts (e.g. viáticos, facturas, vacaciones, compras), exact figures, deadlines, step-by-step resolution processes, required documents or forms, and warnings.
-If the file content is in any language other than Spanish, translate ALL content entirely into Spanish. The output summary must be 100% in Spanish. Your summary will be used for a retrieval-augmented generation (RAG) system to answer employee questions in Spanish. Do not write a generic summary; make it as specific and detailed as possible.
-Format your output using clean Markdown headers, bullet points, and tables if necessary.`;
+    const prompt = `You are a professional document indexer. Analyze the provided file (Filename: "${fileName}") and describe exactly what it contains.
+
+Describe the content thoroughly and factually, whatever the subject matter is. There are no restrictions on subject: describe objects, people, places, products, artworks, events, screenshots, diagrams, scenery, text, numbers, concepts, or anything else you can actually observe in the file.
+
+Important:
+- Never state that the content is "not administrative", "not relevant", "not useful", or "outside the scope" of anything. Such judgments are forbidden.
+- Never produce a list of what the file does NOT contain, and never mention missing categories such as policies, deadlines, amounts, procedures, or departments. If a category is absent, simply do not bring it up.
+- If the file has little text, describe the visual content in detail instead: what is shown, what it looks like, colors, objects, setting, and any readable text.
+- Be specific. Mention names, numbers, dates, colors, and visible text verbatim when present.
+
+If the file content is in any language other than Spanish, translate everything into Spanish. The output must be 100% in Spanish. Your summary will be used by a retrieval-augmented generation (RAG) system to answer questions about these files, so capture enough detail that someone can find and understand this file later.
+Format your output using clean Markdown headers and bullet points.`;
 
     console.log(`[Gemini] Analyzing file "${fileName}" with model ${MODEL_NAME}...`);
     const response = await ai.models.generateContent({

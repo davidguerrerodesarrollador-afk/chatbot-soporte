@@ -380,16 +380,16 @@ export async function handleChatMessage(eventBody) {
       const spaceType = space?.type === 'DM' ? 'Direct Message' : 'Space';
       console.log(`Bot added to space: ${space?.name} (${spaceType})`);
       return {
-        text: `¡Hola! Soy tu Asistente Administrativo.
-He sido creado para ayudarte con las dudas y procedimientos internos de la organización.
+        text: `¡Hola! Soy tu Asistente Virtual.
+Analizo lo que me envíes junto con los documentos que tengo cargados.
 
-Puedes enviarme:
-• Una consulta administrativa, contable o financiera
-• Una descripción de tu duda o trámite
-• Una foto o captura de un documento o comprobante
-• Un video mostrando el inconveniente
+Puedes mandarme:
+• Cualquier pregunta o consulta
+• Una foto o captura (comprobante, documento, imagen)
+• Un video
+• Una nota de voz
 
-Yo analizaré todo junto con la documentación disponible para darte una respuesta detallada.`
+Respondo lo que me preguntes, sin importar el tema.`
       };
     }
 
