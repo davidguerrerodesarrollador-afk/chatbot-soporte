@@ -533,7 +533,18 @@ async function sendMediaToBot(messagesId, inputId, file, question) {
 
 // Wire the camera buttons once the login overlay is hidden
 function initCameraButtons() {
-  if (!window.MediaCapture) return;
+  if (!window.MediaCapture) {
+    console.error('camera.js no se cargó: los botones de cámara no funcionarán.');
+    // Surface it in the UI instead of failing silently
+    ['btn-mini-camera', 'btn-play-camera'].forEach((id) => {
+      const btn = document.getElementById(id);
+      if (!btn) return;
+      btn.disabled = true;
+      btn.title = 'No se pudo cargar el módulo de cámara (recarga la página)';
+      btn.addEventListener('click', () => alert('El módulo de cámara no cargó. Recarga la página con Ctrl+F5.'), { once: true });
+    });
+    return;
+  }
 
   const miniBtn = document.getElementById('btn-mini-camera');
   if (miniBtn && !miniBtn.dataset.wired) {

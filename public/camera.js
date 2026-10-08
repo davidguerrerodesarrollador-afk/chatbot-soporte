@@ -388,15 +388,14 @@ const MediaCapture = (() => {
     document.getElementById('media-modal').classList.remove('active');
   }
 
-  // Set the callback used when the user confirms a capture
-  MediaCapture.onSubmit = (file, question) => {
-    if (submitHandler) submitHandler(file, question);
+  return {
+    open,
+    close,
+    // Calls the handler registered by open() once a capture is confirmed
+    onSubmit(file, question) {
+      if (submitHandler) submitHandler(file, question);
+    }
   };
-
-  MediaCapture.open = open;
-  MediaCapture.close = close;
-
-  return MediaCapture;
 })();
 
 window.MediaCapture = MediaCapture;
