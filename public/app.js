@@ -40,6 +40,7 @@ async function verifyAndInit(password) {
       localStorage.setItem('adminPassword', password);
       hideLogin();
       initDashboard();
+      initCameraButtons();
     } else {
       showLogin();
       localStorage.removeItem('adminPassword');
@@ -490,6 +491,70 @@ async function sendMiniChat() {
   } catch (error) {
     removeTypingIndicator('mini-chat-messages', typingId);
     appendMessage('mini-chat-messages', 'bot', '❌ Error de red al consultar.');
+  }
+}
+
+/**
+ * Send a captured or uploaded media file (photo, video or audio) to the bot.
+ * The file is attached to the question from the given input box.
+ */
+async function sendMediaToBot(messagesId, inputId, file, question) {
+  appendMessage(messagesId, 'user', `${question || 'Analiza este archivo'}${file ? ` [${file.name || file.type}]` : ''}`);
+  const typingId = appendTypingIndicator(messagesId);
+
+  const inputEl = document.getElementById(inputId);
+  if (inputEl) inputEl.value = '';
+
+  try {
+    const formData = new FormData();
+    if (question) formData.append('question', question);
+    if (file) formData.append('file', file, file.name || 'captura');
+
+    const response = await fetch('/api/admin/playground', {
+      method: 'POST',
+      headers: { 'x-admin-password': adminPassword },
+      body: formData
+    });
+
+    removeTypingIndicator(messagesId, typingId);
+
+    if (response.ok) {
+      const data = await response.json();
+      appendMessage(messagesId, 'bot', data.answer);
+    } else {
+      const data = await response.json().catch(() => ({}));
+      appendMessage(messagesId, 'bot', `❌ Error: ${data.error || 'No se pudo procesar el archivo.'}`);
+    }
+  } catch (error) {
+    removeTypingIndicator(messagesId, typingId);
+    appendMessage(messagesId, 'bot', '❌ Error de red al enviar el archivo.');
+  }
+}
+
+// Wire the camera buttons once the login overlay is hidden
+function initCameraButtons() {
+  if (!window.MediaCapture) return;
+
+  const miniBtn = document.getElementById('btn-mini-camera');
+  if (miniBtn && !miniBtn.dataset.wired) {
+    miniBtn.dataset.wired = '1';
+    miniBtn.addEventListener('click', () => {
+      window.MediaCapture.open({
+        questionId: 'mini-chat-input',
+        onSubmit: (file, question) => sendMediaToBot('mini-chat-messages', 'mini-chat-input', file, question)
+      });
+    });
+  }
+
+  const playBtn = document.getElementById('btn-play-camera');
+  if (playBtn && !playBtn.dataset.wired) {
+    playBtn.dataset.wired = '1';
+    playBtn.addEventListener('click', () => {
+      window.MediaCapture.open({
+        questionId: 'play-chat-input',
+        onSubmit: (file, question) => sendMediaToBot('play-chat-messages', 'play-chat-input', file, question)
+      });
+    });
   }
 }
 

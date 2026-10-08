@@ -186,8 +186,8 @@ export async function generateEmbedding(text) {
 
 /**
  * Prepare a media file as a Gemini content part.
- * Images are sent as inline base64 data (no File API needed).
- * Videos are uploaded to the File API and referenced by URI.
+ * Images and small audio files are sent as inline base64 data (no File API needed).
+ * Videos and large audio files are uploaded to the File API and referenced by URI.
  * @param {string} localFilePath Local path to the file.
  * @param {string} mimeType File MIME type.
  * @returns {Promise<object>} A Gemini content part object ({inlineData} or {fileData}).
@@ -203,7 +203,15 @@ export async function prepareMediaPart(localFilePath, mimeType) {
     return { inlineData: { mimeType, data: base64 } };
   }
 
-  // Videos: upload to File API and reference by URI
+  // Audio (e.g. Chat voice messages): inline when small to skip the File API round-trip
+  if (mimeType.startsWith('audio/')) {
+    const buffer = fs.readFileSync(localFilePath);
+    if (buffer.length <= 15 * 1024 * 1024) {
+      return { inlineData: { mimeType, data: buffer.toString('base64') } };
+    }
+  }
+
+  // Videos and large audio files: upload to File API and reference by URI
   const uploadResult = await ai.files.upload({ file: localFilePath, mimeType });
 
   let fileState = await ai.files.get({ name: uploadResult.name });

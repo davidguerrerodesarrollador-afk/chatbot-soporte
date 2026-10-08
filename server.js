@@ -13,7 +13,10 @@ import { syncFolder, getSyncStatus } from './sync.js';
 import { verifyGoogleChatToken, handleChatMessage } from './chat.js';
 import { generateEmbedding, answerQuestion, prepareMediaPart } from './gemini.js';
 
-const upload = multer({ dest: join(dirname(fileURLToPath(import.meta.url)), 'temp', 'uploads') });
+const upload = multer({
+  dest: join(dirname(fileURLToPath(import.meta.url)), 'temp', 'uploads'),
+  limits: { fileSize: 50 * 1024 * 1024 }
+});
 
 dotenv.config();
 
@@ -179,52 +182,109 @@ app.post('/api/admin/sync', apiLimiter, verifyAdmin, async (req, res) => {
   }
 });
 
-// Playground chat testing endpoint
-app.post('/api/admin/playground', apiLimiter, verifyAdmin, async (req, res) => {
-  const { question } = req.body;
-  if (!question) {
-    return res.status(400).json({ error: 'La pregunta es requerida' });
+// Playground chat testing endpoint.
+// Accepts either JSON {question} or multipart/form-data with an optional file,
+// so the panel can send a photo/video/audio captured from the browser.
+// multer only runs for multipart requests; running it on an already-parsed
+// JSON body fails with "Unexpected end of form".
+const playgroundUpload = multer({
+  dest: join(dirname(fileURLToPath(import.meta.url)), 'temp', 'uploads'),
+  limits: { fileSize: 50 * 1024 * 1024 }
+}).single('file');
+
+function optionalUpload(req, res, next) {
+  const type = req.headers['content-type'] || '';
+  if (!type.startsWith('multipart/form-data')) return next();
+  return playgroundUpload(req, res, (err) => {
+    if (err) {
+      console.error('[Server] Playground upload error:', err.message);
+      return res.status(400).json({ error: `No se pudo procesar el archivo: ${err.message}` });
+    }
+    next();
+  });
+}
+
+app.post('/api/admin/playground', apiLimiter, verifyAdmin, optionalUpload, async (req, res) => {
+  const file = req.file;
+  const question = req.body?.question || '';
+  if (!question.trim() && !file) {
+    return res.status(400).json({ error: 'Escribe una consulta o adjunta una imagen, video o audio.' });
   }
 
   try {
+    if (file) validateMediaFile(file);
+
+    const userQuestion = question.trim() || 'Analiza este archivo y dame información relevante.';
+
     // RAG Flow
-    const queryEmbedding = await generateEmbedding(question);
-    const matchedFiles = await searchSimilarFiles(queryEmbedding, 3);
-    const relevantFiles = matchedFiles.filter(f => f.score >= 0.2);
-    const answer = await answerQuestion(question, relevantFiles);
+    let relevantFiles = [];
+    if (question.trim()) {
+      const queryEmbedding = await generateEmbedding(question);
+      const matchedFiles = await searchSimilarFiles(queryEmbedding, 3);
+      relevantFiles = matchedFiles.filter(f => f.score >= 0.2);
+    }
+
+    const mediaParts = [];
+    if (file) {
+      const part = await prepareMediaPart(file.path, file.mimetype);
+      mediaParts.push(part);
+    }
+
+    // When media is attached without text, describe it first to drive the search
+    if (mediaParts.length > 0 && relevantFiles.length === 0) {
+      try {
+        const desc = await answerQuestion(
+          'Describe en detalle el contenido de este archivo. Genera palabras clave específicas.',
+          [], mediaParts
+        );
+        const descEmbedding = await generateEmbedding(desc);
+        const descMatched = await searchSimilarFiles(descEmbedding, 3);
+        relevantFiles = descMatched.filter(f => f.score >= 0.2);
+      } catch (e) {
+        console.log('[Server] Media description search failed:', e.message);
+      }
+    }
+
+    const answer = await answerQuestion(userQuestion, relevantFiles, mediaParts);
 
     const sourceNames = relevantFiles.map(f => `${f.name} (Similitud: ${Math.round(f.score * 100)}%)`);
-    
+    if (mediaParts.length) sourceNames.push(`Archivo adjunto (${file.mimetype})`);
+
     // Save playground logs separately
     await logChat({
       platform: 'web-playground',
       userId: 'admin',
       userName: 'Administrador (Playground)',
-      question: question,
+      question: userQuestion + (file ? ` [archivo: ${file.originalname}]` : ''),
       answer: answer,
       sources: sourceNames
     });
 
     res.json({
       answer: answer,
-      sources: relevantFiles.map(f => ({ name: f.name, score: f.score }))
+      sources: relevantFiles.map(f => ({ name: f.name, score: f.score })),
+      mediaProcessed: !!file
     });
   } catch (error) {
     console.error('[Server] Playground error:', error);
-    res.status(500).json({ error: error.message });
+    res.status(error.statusCode || 500).json({ error: error.message });
+  } finally {
+    if (file) {
+      try { fs.unlinkSync(file.path); } catch {}
+    }
   }
 });
 
-// Playground test endpoint with media (images/videos)
+// Playground test endpoint with media (images/videos/audio)
 app.post('/api/admin/test-media', apiLimiter, verifyAdmin, upload.single('file'), async (req, res) => {
   const question = req.body.question || '';
   const file = req.file;
 
   if (!file && !question.trim()) {
-    return res.status(400).json({ error: 'Debes proporcionar texto, un archivo (imagen/video), o ambos.' });
+    return res.status(400).json({ error: 'Debes proporcionar texto, un archivo (imagen/video/audio), o ambos.' });
   }
 
-  const tempDir = join(__dirname, 'temp', 'uploads');
+  if (file) validateMediaFile(file);
 
   try {
     // 1. Search RAG if there's text
@@ -235,7 +295,7 @@ app.post('/api/admin/test-media', apiLimiter, verifyAdmin, upload.single('file')
       relevantFiles = matchedFiles.filter(f => f.score >= 0.2);
     }
 
-    // 2. Prepare media part (inlineData for images, fileData for videos)
+    // 2. Prepare media part (inlineData for images/small audio, fileData for videos)
     const mediaParts = [];
     if (file) {
       const part = await prepareMediaPart(file.path, file.mimetype);
@@ -243,7 +303,7 @@ app.post('/api/admin/test-media', apiLimiter, verifyAdmin, upload.single('file')
     }
 
     // 3. Generate answer
-    const userQuestion = question.trim() || 'Analiza este archivo y dame informaci├│n relevante.';
+    const userQuestion = question.trim() || 'Analiza este archivo y dame información relevante.';
     const answer = await answerQuestion(userQuestion, relevantFiles, mediaParts);
 
     const sourceNames = relevantFiles.map(f => `${f.name} (Similitud: ${Math.round(f.score * 100)}%)`);
@@ -263,6 +323,17 @@ app.post('/api/admin/test-media', apiLimiter, verifyAdmin, upload.single('file')
     }
   }
 });
+
+// Media types the Gemini inline/File API payloads can handle. Rejecting these
+// early gives a clear message instead of failing inside the Gemini SDK.
+function validateMediaFile(file) {
+  if (!/^(image|video|audio)\//.test(file.mimetype)) {
+    const err = new Error(`Tipo de archivo no soportado: ${file.mimetype}. Usa una imagen, video o audio.`);
+    err.statusCode = 415;
+    throw err;
+  }
+  return file;
+}
 
 // ----------------------------------------------------
 // Scheduler: Daily Sync at 1:00 AM
@@ -285,6 +356,10 @@ cron.schedule('0 1 * * *', async () => {
 // Initialize server
 async function startServer() {
   try {
+    // multer writes uploads straight to this directory and does not create it,
+    // so a fresh deploy (or an emptied temp/) would fail with ENOENT.
+    fs.mkdirSync(join(__dirname, 'temp', 'uploads'), { recursive: true });
+
     console.log('[Server] Initializing SQLite database...');
     await initDb();
     

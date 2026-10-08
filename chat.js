@@ -1,6 +1,7 @@
 import { OAuth2Client, JWT } from 'google-auth-library';
 import { generateEmbedding, answerQuestion, prepareMediaPart } from './gemini.js';
 import { searchSimilarFiles, logChat } from './database.js';
+import { downloadFile } from './drive.js';
 import fs from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
@@ -10,6 +11,18 @@ dotenv.config();
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const authClient = new OAuth2Client();
+
+// Idempotency cache: Chat retries webhook deliveries, which would otherwise
+// produce duplicate answers. Entries expire after 10 minutes.
+const DEDUPE_TTL_MS = 10 * 60 * 1000;
+const processedMessages = new Map();
+
+function pruneProcessedMessages() {
+  const cutoff = Date.now() - DEDUPE_TTL_MS;
+  for (const [key, ts] of processedMessages) {
+    if (ts < cutoff) processedMessages.delete(key);
+  }
+}
 
 // Load service account credentials from file or env var
 function tryParseJSON(str) {
@@ -72,21 +85,68 @@ async function sendChatMessage(spaceName, text) {
   console.log(`[Chat] Message sent to space: ${spaceName}`);
 }
 
-// Download a Google Chat attachment using the service account
-async function downloadChatAttachment(sourceUrl, outputPath) {
+// Create an authorized JWT client for Google Chat API calls
+async function getJwtClient() {
   const key = getServiceAccountCredentials();
   const jwtClient = new JWT({
     email: key.client_email,
     key: key.private_key,
     scopes: ['https://www.googleapis.com/auth/chat.bot'],
   });
-
   await jwtClient.authorize();
-  const response = await jwtClient.request({ url: sourceUrl, responseType: 'arraybuffer' });
+  return jwtClient;
+}
 
-  const buffer = Buffer.from(response.data);
-  fs.writeFileSync(outputPath, buffer);
+// Download an attachment that was uploaded directly into the Chat message
+// (source: UPLOADED_CONTENT). The bytes are fetched via the Chat media API:
+//   GET https://chat.googleapis.com/v1/media/{attachmentDataRef.resourceName}?alt=media
+// The `downloadUri` present in the payload is intended for humans only and
+// must not be used by apps.
+async function downloadUploadedAttachment(resourceName, outputPath) {
+  const jwtClient = await getJwtClient();
+  const url = `https://chat.googleapis.com/v1/media/${resourceName}?alt=media`;
+  const response = await jwtClient.request({ url, responseType: 'arraybuffer' });
+
+  fs.writeFileSync(outputPath, Buffer.from(response.data));
   return outputPath;
+}
+
+// Pick a file extension for the temp file based on the MIME type and original name
+function resolveExtension(att, fallback) {
+  const type = (att.contentType || '').toLowerCase();
+  const map = {
+    'image/png': 'png', 'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/webp': 'webp',
+    'image/gif': 'gif', 'image/heic': 'heic',
+    'video/mp4': 'mp4', 'video/quicktime': 'mov', 'video/webm': 'webm',
+    'video/x-matroska': 'mkv', 'video/3gpp': '3gp',
+    'audio/mpeg': 'mp3', 'audio/mp3': 'mp3', 'audio/mp4': 'm4a', 'audio/x-m4a': 'm4a',
+    'audio/aac': 'aac', 'audio/ogg': 'ogg', 'audio/opus': 'opus', 'audio/wav': 'wav',
+    'audio/x-wav': 'wav', 'audio/webm': 'weba', 'audio/flac': 'flac',
+  };
+  if (map[type]) return map[type];
+  if (type.includes('/')) return type.split('/')[1].split(';')[0];
+  // Last resort: use the original file name's extension if it has one
+  const nameExt = att.contentName?.match(/\.([a-z0-9]{2,5})$/i);
+  return nameExt ? nameExt[1].toLowerCase() : fallback;
+}
+
+// Google Chat has no documented MIME type for voice messages (commonly .m4a/AAC).
+// Normalize the ones we know so the Gemini File API accepts them.
+function normalizeAudioMimeType(mimeType) {
+  const type = (mimeType || '').toLowerCase();
+  if (!type.startsWith('audio/')) return mimeType;
+  if (['audio/mp4', 'audio/x-m4a', 'audio/m4a', 'audio/aac'].includes(type)) return 'audio/mp4';
+  if (type === 'audio/x-wav') return 'audio/wav';
+  return mimeType;
+}
+
+// Sanitize a filename for use in a temp path
+function safeFileName(name, fallback) {
+  const cleaned = (name || '')
+    .replace(/[^\w.\-]+/g, '_')
+    .replace(/^\.+/, '')
+    .slice(0, 80);
+  return cleaned || fallback;
 }
 
 /**
@@ -113,23 +173,46 @@ async function processMessage(question, attachments, senderName, senderId, space
     relevantFiles = matchedFiles.filter(f => f.score >= 0.2);
   }
 
-  // 2. Process attachments (images/videos) uploaded by the user in Chat
+  // 2. Process attachments (images/videos/audio) uploaded by the user in Chat
   const mediaParts = [];
   const tempPaths = [];
+  const failedAttachments = [];
 
   if (attachments && attachments.length > 0) {
     for (const att of attachments) {
-      if (!att.sourceUrl) continue;
-      const ext = att.contentType?.split('/')[1] || 'file';
-      const tempPath = join(tempDir, `chat_${Date.now()}_${att.contentName || 'file'}.${ext}`);
+      // A Chat attachment is either uploaded directly into the message
+      // (attachmentDataRef) or a Drive file shared into the space (driveDataRef).
+      const uploadedResource = att.attachmentDataRef?.resourceName;
+      const driveFileId = att.driveDataRef?.driveFileId;
+
+      if (!uploadedResource && !driveFileId) {
+        console.warn(`[Chat] Attachment "${att.contentName || 'sin nombre'}" has no downloadable reference (source=${att.source}). Skipping.`);
+        continue;
+      }
+
+      const isAudio = (att.contentType || '').toLowerCase().startsWith('audio/');
+      const ext = resolveExtension(att, isAudio ? 'm4a' : 'bin');
+      const baseName = safeFileName(att.contentName, 'adjunto');
+      const tempPath = join(tempDir, `chat_${Date.now()}_${Math.random().toString(36).slice(2, 8)}_${baseName}.${ext}`);
       tempPaths.push(tempPath);
 
-      console.log(`[Chat] Downloading attachment: ${att.contentName} (${att.contentType})`);
-      await downloadChatAttachment(att.sourceUrl, tempPath);
+      try {
+        if (uploadedResource) {
+          console.log(`[Chat] Downloading Chat attachment: ${att.contentName} (${att.contentType})`);
+          await downloadUploadedAttachment(uploadedResource, tempPath);
+        } else {
+          console.log(`[Chat] Downloading Drive attachment: ${att.contentName} (${att.contentType})`);
+          await downloadFile(driveFileId, tempPath);
+        }
 
-      console.log(`[Chat] Preparing media for Gemini...`);
-      const part = await prepareMediaPart(tempPath, att.contentType);
-      mediaParts.push(part);
+        const mimeType = normalizeAudioMimeType(att.contentType);
+        console.log(`[Chat] Preparing media for Gemini (${mimeType})...`);
+        const part = await prepareMediaPart(tempPath, mimeType);
+        mediaParts.push(part);
+      } catch (err) {
+        console.error(`[Chat] Failed to process attachment "${att.contentName || 'sin nombre'}":`, err.message);
+        failedAttachments.push(att.contentName || 'archivo sin nombre');
+      }
     }
   }
 
@@ -175,6 +258,11 @@ async function processMessage(question, attachments, senderName, senderId, space
     }
     if (mediaParts.length > 0 && relevantFiles.length === 0) {
       responseText += `\n\nNota: No encontré información específica en la documentación de Drive relacionada con lo que enviaste. Te recomiendo contactar al área responsable.`;
+    } else if (attachments.length > 0 && mediaParts.length === 0 && failedAttachments.length === 0) {
+      responseText += `\n\n⚠️ Recibí tu mensaje pero no pude descargar los archivos adjuntos. Intenta de nuevo.`;
+    }
+    if (failedAttachments.length > 0) {
+      responseText += `\n\n⚠️ No pude procesar ${failedAttachments.length} archivo(s): ${failedAttachments.join(', ')}.`;
     }
 
     // Send answer via Chat API
@@ -255,14 +343,27 @@ export async function handleChatMessage(eventBody) {
     const spaceName = space?.name;
 
     const question = msg.text || '';
-    const attachments = msg.attachment || msg.attachments || [];
+    const attachments = msg.attachment || [];
     const senderName = user?.displayName || 'Usuario de Google Chat';
     const senderId = user?.name || 'unknown';
 
     console.log(`[Google Chat] Message from ${senderName}: "${question.substring(0, 100)}" with ${attachments.length} attachment(s), space: ${spaceName}`);
 
-    // Process asynchronously: answer arrives via Chat API
+    // Google Chat may retry the webhook for the same message. Use the message
+    // resource name as an idempotency key to avoid duplicate answers.
+    const dedupeKey = msg.name || `${spaceName}|${senderId}|${msg.createTime}`;
+    if (dedupeKey && processedMessages.has(dedupeKey)) {
+      console.log('[Google Chat] Duplicate message ignored:', dedupeKey);
+      return null;
+    }
+
+    // Acknowledge immediately (Chat apps have a 30s synchronous timeout) and
+    // process asynchronously, replying via the Chat API when done.
     if (question.trim() || attachments.length > 0) {
+      if (dedupeKey) {
+        processedMessages.set(dedupeKey, Date.now());
+        pruneProcessedMessages();
+      }
       processMessage(question, attachments, senderName, senderId, spaceName)
         .catch(err => console.error('[Chat] Async error:', err));
     }
@@ -294,7 +395,7 @@ Yo analizaré todo junto con la documentación disponible para darte una respues
 
     if (type === 'MESSAGE') {
       const question = message?.text || '';
-      const attachments = message?.attachment || message?.attachments || [];
+      const attachments = message?.attachment || [];
       const senderName = user?.displayName || 'Usuario de Google Chat';
       const senderId = user?.name || 'unknown';
 

@@ -19,6 +19,7 @@
     .loading { display: none; text-align: center; padding: 20px; }
     .loading.active { display: block; }
     .back-link { margin-bottom: 20px; display: block; }
+    .media-attach-row { display: flex; gap: 10px; flex-wrap: wrap; }
   </style>
 </head>
 <body>
@@ -31,12 +32,20 @@
       <form id="test-form">
         <div class="input-group">
           <label for="question">Texto (opcional)</label>
-          <textarea id="question" rows="3" placeholder="Describe el problema o error que ves en la imagen/video..." style="width:100%;padding:10px;border-radius:4px;border:1px solid var(--border-default);background:var(--bg-inset);color:var(--text-main);font-family:var(--font-sans);"></textarea>
+          <textarea id="question" rows="3" placeholder="Escribe tu duda administrativa..." style="width:100%;padding:10px;border-radius:4px;border:1px solid var(--border-default);background:var(--bg-inset);color:var(--text-main);font-family:var(--font-sans);"></textarea>
         </div>
 
         <div class="input-group" style="margin-top:15px;">
-          <label for="file">Archivo (imagen o video)</label>
-          <input type="file" id="file" accept="image/*,video/*" style="width:100%;padding:10px;border-radius:4px;border:1px solid var(--border-default);background:var(--bg-subtle);color:var(--text-main);">
+          <label for="file">Adjuntar foto, video o audio</label>
+          <div class="media-attach-row">
+            <button type="button" class="btn btn-camera-capture" id="btn-open-camera">
+              <i class="fa-solid fa-camera"></i> Abrir cámara
+            </button>
+            <button type="button" class="btn" id="btn-open-audio">
+              <i class="fa-solid fa-microphone"></i> Grabar audio
+            </button>
+          </div>
+          <input type="file" id="file" accept="image/*,video/*,audio/*" style="width:100%;margin-top:10px;padding:10px;border-radius:4px;border:1px solid var(--border-default);background:var(--bg-subtle);color:var(--text-main);">
           <div class="preview-area" id="preview"></div>
         </div>
 
@@ -54,18 +63,22 @@
     </div>
   </div>
 
+  <script src="camera.js"></script>
   <script>
     const password = localStorage.getItem('adminPassword');
     if (!password) { window.location.href = '/'; }
 
-    document.getElementById('file').addEventListener('change', function() {
-      const preview = document.getElementById('preview');
-      preview.innerHTML = '';
+    const fileInput = document.getElementById('file');
+    fileInput.addEventListener('change', function() {
       if (this.files && this.files[0]) {
         const file = this.files[0];
+        const preview = document.getElementById('preview');
+        preview.innerHTML = '';
         const url = URL.createObjectURL(file);
         if (file.type.startsWith('video/')) {
           preview.innerHTML = `<video controls src="${url}"></video>`;
+        } else if (file.type.startsWith('audio/')) {
+          preview.innerHTML = `<audio controls src="${url}"></audio>`;
         } else {
           preview.innerHTML = `<img src="${url}" alt="Preview">`;
         }
@@ -76,9 +89,9 @@
       e.preventDefault();
       const formData = new FormData();
       const question = document.getElementById('question').value;
-      const file = document.getElementById('file').files[0];
+      const file = fileInput.files[0];
 
-      if (!question && !file) { alert('Debes escribir algo o seleccionar un archivo.'); return; }
+      if (!question && !file) { alert('Escribe una consulta o adjunta una imagen, video o audio.'); return; }
 
       if (question) formData.append('question', question);
       if (file) formData.append('file', file);
@@ -109,6 +122,45 @@
         alert('Error de conexión: ' + err.message);
       }
     });
+
+    // Hand a captured photo/video/audio to the regular file input so the
+    // existing submit handler works unchanged.
+    function showPreview(file) {
+      const preview = document.getElementById('preview');
+      preview.innerHTML = '';
+      const url = URL.createObjectURL(file);
+      if (file.type.startsWith('video/')) {
+        preview.innerHTML = `<video controls src="${url}"></video>`;
+      } else if (file.type.startsWith('audio/')) {
+        preview.innerHTML = `<audio controls src="${url}"></audio>`;
+      } else {
+        preview.innerHTML = `<img src="${url}" alt="Preview">`;
+      }
+    }
+
+    function injectCapturedFile(file) {
+      const dt = new DataTransfer();
+      dt.items.add(file);
+      fileInput.files = dt.files;
+      showPreview(file);
+    }
+
+    if (window.MediaCapture) {
+      document.getElementById('btn-open-camera').addEventListener('click', () => {
+        window.MediaCapture.open({
+          mode: 'photo',
+          questionId: 'question',
+          onSubmit: injectCapturedFile
+        });
+      });
+      document.getElementById('btn-open-audio').addEventListener('click', () => {
+        window.MediaCapture.open({
+          mode: 'audio',
+          questionId: 'question',
+          onSubmit: injectCapturedFile
+        });
+      });
+    }
   </script>
 </body>
 </html>
