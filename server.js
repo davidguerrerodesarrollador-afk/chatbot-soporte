@@ -11,7 +11,7 @@ import fs from 'fs';
 import { initDb, getAllFilesWithSummaries, getChatLogs, logChat, searchSimilarFiles, logLoginAttempt, getRecentFailedAttempts } from './database.js';
 import { syncFolder, getSyncStatus } from './sync.js';
 import { verifyGoogleChatToken, handleChatMessage } from './chat.js';
-import { generateEmbedding, answerQuestion, prepareMediaPart } from './gemini.js';
+import { generateEmbedding, answerQuestion, prepareMediaPart, getBuildId } from './gemini.js';
 
 const upload = multer({
   dest: join(dirname(fileURLToPath(import.meta.url)), 'temp', 'uploads'),
@@ -136,6 +136,7 @@ app.get('/api/admin/status', apiLimiter, verifyAdmin, async (req, res) => {
       folderId: folderId.includes('your_drive_folder_id') ? 'No configurada' : folderId,
       filesCount: files.length,
       logsCount: logs.length,
+      build: getBuildId(),
       sync: syncStatus
     });
   } catch (error) {

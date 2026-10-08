@@ -9,6 +9,10 @@ let aiClient = null;
 const MODEL_NAME = 'gemini-2.5-flash';
 const EMBEDDING_MODEL = 'gemini-embedding-2';
 
+// Bumped whenever MIME handling changes, so error messages reveal which build
+// is deployed instead of guessing.
+const BUILD_ID = 'mime-magicbytes-2';
+
 /**
  * Detect a MIME type from the file's magic bytes.
  * More reliable than the MIME Google Drive reports, which describes the
@@ -216,10 +220,21 @@ ${textContent}`;
   }
 
   console.log(`[Gemini] Uploading "${fileName}" (${effectiveMimeType}) to Gemini File API...`);
-  const uploadResult = await ai.files.upload({
-    file: localFilePath,
-    mimeType: effectiveMimeType,
-  });
+  let uploadResult;
+  try {
+    uploadResult = await ai.files.upload({
+      file: localFilePath,
+      mimeType: effectiveMimeType,
+    });
+  } catch (uploadError) {
+    // Surface what we detected: this distinguishes a MIME problem from a
+    // missing/renamed field, and confirms which build is actually running.
+    throw new Error(
+      `Gemini File API rechazó "${fileName}" ` +
+      `(Drive reportó: "${mimeType || 'vacío'}", detectado: "${effectiveMimeType}", ` +
+      `build: ${BUILD_ID}): ${uploadError.message}`
+    );
+  }
 
   console.log(`[Gemini] Upload complete. File URI: ${uploadResult.uri}. Name: ${uploadResult.name}`);
 
@@ -316,6 +331,10 @@ export async function generateEmbedding(text) {
  * @param {string} mimeType File MIME type.
  * @returns {Promise<object>} A Gemini content part object ({inlineData} or {fileData}).
  */
+export function getBuildId() {
+  return BUILD_ID;
+}
+
 export async function prepareMediaPart(localFilePath, mimeType) {
   const ai = getGeminiClient();
   if (!ai) throw new Error('Gemini API client is not initialized.');
