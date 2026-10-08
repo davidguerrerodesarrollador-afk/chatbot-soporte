@@ -1045,28 +1045,6 @@ tr:last-child td {
   50% { opacity: 0.25; }
 }
 
-.media-flip {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  background: rgba(0, 0, 0, 0.55);
-  color: #fff;
-  font-size: 1rem;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 2;
-  transition: var(--transition-smooth);
-}
-.media-flip:hover {
-  background: rgba(33, 115, 70, 0.9);
-}
-
 .media-preview {
   display: flex;
   flex-direction: column;

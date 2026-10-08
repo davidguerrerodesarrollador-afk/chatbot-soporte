@@ -1,4 +1,4 @@
-/* Camera & media capture for the admin panel.
+﻿/* Camera & media capture for the admin panel.
  * Requires a secure context (HTTPS or localhost) to access the camera/mic.
  */
 
@@ -38,9 +38,6 @@ const MediaCapture = (() => {
           <div id="media-rec-indicator" class="media-rec-indicator hide">
             <span class="media-rec-dot"></span> <span id="media-rec-time">00:00</span>
           </div>
-          <button type="button" class="media-flip hide" id="media-flip" title="Cambiar de cámara" aria-label="Cambiar de cámara">
-            <i class="fa-solid fa-rotate"></i>
-          </button>
         </div>
 
         <div id="media-preview" class="media-preview hide"></div>
@@ -66,8 +63,8 @@ const MediaCapture = (() => {
         </div>
 
         <p class="media-hint text-muted">
-          Si el navegador pide permiso, acéptalo. En celular se abrirá la cámara del teléfono;
-          en computadora elige la cámara frontal o la trasera.
+          Si el navegador pide permiso, acéptalo. En celular se abrirá la cámara trasera del teléfono;
+          en computadora se usa la cámara disponible.
         </p>
       </div>
     `;
@@ -78,7 +75,6 @@ const MediaCapture = (() => {
     buildUI();
 
     document.getElementById('media-close').addEventListener('click', close);
-    document.getElementById('media-flip').addEventListener('click', switchCamera);
     document.getElementById('media-capture-btn').addEventListener('click', onCaptureClick);
     document.getElementById('media-file-btn').addEventListener('click', () => {
       const input = document.createElement('input');
@@ -97,7 +93,6 @@ const MediaCapture = (() => {
         captureMode = btn.dataset.mode;
         resetPreview();
         stopStream();
-        activeFacingIndex = 0;
         const placeholder = document.getElementById('media-placeholder');
         placeholder.classList.remove('hide');
         document.getElementById('media-placeholder-text').textContent = 'Iniciando cámara...';
@@ -121,45 +116,96 @@ const MediaCapture = (() => {
     });
 }
 
-  // Prefer the rear camera on phones, falling back through increasingly loose
-  // constraints until something produces a usable image.
-const VIDEO_PREFERENCES = [
-  { exact: 'environment' },
-  { ideal: 'environment' },
-  undefined,
-  { exact: 'user' },
-  { ideal: 'user' },
-];
+// Labels browsers use for the rear camera across vendors.
+const REAR_CAMERA_PATTERN = /(back|rear|trasera|environment)/i;
 
-async function startStream(preferredIndex = 0) {
+/**
+ * Ask for the rear camera only.
+ *
+ * facingMode is unreliable: some phones ignore `ideal` and silently hand back
+ * the front camera, and `exact` throws OverconstrainedError on devices that
+ * only expose one camera. Enumerating devices and matching on the label is
+ * the approach that behaves the same across phones.
+ */
+async function getRearCameraConstraints(wantAudio) {
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  const cameras = devices.filter((d) => d.kind === 'videoinput');
+
+  // Labels are only populated after permission has been granted at least once.
+  const named = cameras.filter((d) => d.label && REAR_CAMERA_PATTERN.test(d.label));
+  if (named.length > 0) {
+    return { video: { deviceId: { exact: named[0].deviceId } }, audio: wantAudio };
+  }
+
+  // Only one camera exposed: use it as-is rather than failing.
+  if (cameras.length === 1) {
+    return { video: { deviceId: { exact: cameras[0].deviceId } }, audio: wantAudio };
+  }
+
+  // Labels not available yet, so fall back to the facing-mode hints.
+  return { video: { facingMode: { ideal: 'environment' } }, audio: wantAudio };
+}
+
+async function startStream() {
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
     throw new Error('Este navegador no permite el uso de la cámara. Abre la página en un navegador moderno (Chrome, Edge, Safari).');
   }
   if (stream) return;
 
-  const attempts = VIDEO_PREFERENCES.map((facingMode) => ({
-    video: facingMode ? { facingMode } : true,
-    audio: captureMode === 'video',
-  }));
-
-  const order = [...attempts.slice(preferredIndex), ...attempts.slice(0, preferredIndex)];
-
+  const wantAudio = captureMode === 'video';
   let lastError = null;
-  for (const constraints of order) {
-    try {
-      const candidate = await navigator.mediaDevices.getUserMedia(constraints);
-      // A dead track renders black, so reject it and keep trying.
-      if (!(await videoIsLive(candidate))) {
-        candidate.getTracks().forEach((t) => t.stop());
-        continue;
-      }
+
+  // First pass: pick the rear camera by enumerating devices. This also grants
+  // the permission, which is what populates device labels on some browsers.
+  try {
+    const constraints = await getRearCameraConstraints(wantAudio);
+    const candidate = await navigator.mediaDevices.getUserMedia(constraints);
+    if (await videoIsLive(candidate)) {
       stream = candidate;
-      activeFacingIndex = Math.max(0, attempts.findIndex((a) => JSON.stringify(a) === JSON.stringify(constraints)));
       return;
-    } catch (err) {
-      lastError = err;
     }
+    candidate.getTracks().forEach((t) => t.stop());
+  } catch (err) {
+    lastError = err;
   }
+
+  // Second pass: retry the enumeration now that permission is granted, which
+  // makes the device labels available to match the rear camera.
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const named = devices.filter(
+      (d) => d.kind === 'videoinput' && d.label && REAR_CAMERA_PATTERN.test(d.label)
+    );
+    if (named.length > 0) {
+      const candidate = await navigator.mediaDevices.getUserMedia({
+        video: { deviceId: { exact: named[0].deviceId } },
+        audio: wantAudio,
+      });
+      if (await videoIsLive(candidate)) {
+        stream = candidate;
+        return;
+      }
+      candidate.getTracks().forEach((t) => t.stop());
+    }
+  } catch (err) {
+    lastError = err;
+  }
+
+  // Last resort: whatever camera the device offers by default.
+  try {
+    const candidate = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' } },
+      audio: wantAudio,
+    });
+    if (await videoIsLive(candidate)) {
+      stream = candidate;
+      return;
+    }
+    candidate.getTracks().forEach((t) => t.stop());
+  } catch (err) {
+    lastError = err;
+  }
+
   throw new Error(describeMediaError(lastError || {}));
 }
 
@@ -169,27 +215,7 @@ function onStreamReady() {
   video.classList.remove('hide');
   document.getElementById('media-placeholder').classList.add('hide');
   video.play().catch(() => {});
-  updateFlipButton();
 }
-
-// Only offer the flip control when the device exposes more than one camera
-async function updateFlipButton() {
-    const btn = document.getElementById('media-flip');
-    if (!btn) return;
-    if (!navigator.mediaDevices?.enumerateDevices) {
-      btn.classList.add('hide');
-      return;
-    }
-    try {
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const cameras = devices.filter((d) => d.kind === 'videoinput');
-      // Some phones expose only one camera to the browser but still support
-      // facingMode, so show the control whenever there is more than one option.
-      btn.classList.toggle('hide', cameras.length < 2);
-    } catch {
-      btn.classList.remove('hide');
-    }
-  }
 
   // The <video> element can report 0x0 until the first frame decodes.
 function waitForVideoFrame(video, timeoutMs = 3000) {
@@ -257,27 +283,6 @@ function videoIsLive(activeStream) {
     probe.play().catch(() => done(false));
   });
 }
-
-let activeFacingIndex = 0;
-
-// Flip between the front and rear camera.
-async function switchCamera() {
-  if (!stream) return;
-  if (recorder && recorder.state === 'recording') return;
-
-  stopStream();
-  try {
-    // Move past the current attempt so we land on the other camera
-    await startStream(activeFacingIndex + 1);
-    onStreamReady();
-  } catch (err) {
-    // Nothing worked; show the reason instead of leaving a black screen
-    const placeholder = document.getElementById('media-placeholder');
-    placeholder.classList.remove('hide');
-    document.getElementById('media-placeholder-text').textContent = err.message;
-  }
-}
-
 
 function stopStream() {
     if (stream) {
@@ -486,7 +491,6 @@ function stopStream() {
     resetPreview();
     stopStream();
     setRecordingUI(false);
-    activeFacingIndex = 0;
     document.getElementById('media-modal').classList.add('active');
 
     // Start the camera as soon as the modal opens, otherwise the preview stays
