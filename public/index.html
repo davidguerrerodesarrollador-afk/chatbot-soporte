@@ -41,9 +41,15 @@
 
   <!-- Main Dashboard App -->
   <div id="app-container" class="app-layout hide">
-    
+
+    <!-- Mobile menu toggle + backdrop -->
+    <button type="button" id="btn-sidebar-toggle" class="sidebar-toggle" aria-label="Abrir menú" aria-expanded="false">
+      <i class="fa-solid fa-bars"></i>
+    </button>
+    <div id="sidebar-backdrop" class="sidebar-backdrop"></div>
+
     <!-- Sidebar Navigation -->
-    <aside class="sidebar glass-panel">
+    <aside class="sidebar glass-panel" id="sidebar">
       <div class="sidebar-brand">
         <i class="fa-solid fa-robot logo-icon-small"></i>
         <h2>G-Chat Bot</h2>

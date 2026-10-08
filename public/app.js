@@ -98,6 +98,15 @@ function setupEventListeners() {
   // Sync Button
   document.getElementById('btn-sync-now').addEventListener('click', triggerSync);
 
+  // Mobile sidebar drawer
+  const sidebarToggle = document.getElementById('btn-sidebar-toggle');
+  const sidebarBackdrop = document.getElementById('sidebar-backdrop');
+  sidebarToggle.addEventListener('click', () => toggleSidebar());
+  sidebarBackdrop.addEventListener('click', () => toggleSidebar(false));
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') toggleSidebar(false);
+  });
+
   // Document Search Filter
   document.getElementById('doc-search').addEventListener('input', (e) => {
     filterDocuments(e.target.value);
@@ -127,7 +136,23 @@ function setupEventListeners() {
   });
 }
 
+function toggleSidebar(force) {
+  const sidebar = document.getElementById('sidebar');
+  const backdrop = document.getElementById('sidebar-backdrop');
+  const toggle = document.getElementById('btn-sidebar-toggle');
+  const isOpen = force === undefined ? !sidebar.classList.contains('open') : force;
+
+  sidebar.classList.toggle('open', isOpen);
+  backdrop.classList.toggle('open', isOpen);
+  toggle.setAttribute('aria-expanded', String(isOpen));
+  toggle.setAttribute('aria-label', isOpen ? 'Cerrar menú' : 'Abrir menú');
+  document.body.classList.toggle('sidebar-open', isOpen);
+}
+
 function switchTab(tabId) {
+  // Close the drawer so the tapped section is visible on small screens
+  if (window.matchMedia('(max-width: 900px)').matches) toggleSidebar(false);
+
   // Update sidebar classes
   document.querySelectorAll('.menu-item').forEach(item => {
     if (item.getAttribute('data-tab') === tabId) {
