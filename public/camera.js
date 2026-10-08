@@ -132,7 +132,7 @@ const MediaCapture = (() => {
 
     const wants = captureMode === 'audio'
       ? { audio: true }
-      : { video: { facingMode: { ideal: 'environment' } }, audio: captureMode === 'video' };
+      : { video: true, audio: captureMode === 'video' };
 
     try {
       stream = await navigator.mediaDevices.getUserMedia(wants);
@@ -148,6 +148,17 @@ const MediaCapture = (() => {
         }
       } else {
         throw new Error(describeMediaError(err));
+      }
+    }
+
+    // Some mobile browsers honor facingMode but hand back a track that never
+    // produces frames, showing a black screen. Retry with a bare video track.
+    if (captureMode !== 'audio' && !videoIsLive(stream)) {
+      stopStream();
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      } catch {
+        // keep the original stream, it may still work
       }
     }
 
@@ -175,7 +186,17 @@ const MediaCapture = (() => {
     return err?.message || 'No se pudo acceder a la cámara.';
   }
 
-  function stopStream() {
+  // A track exists but never delivers frames, so the preview would be black.
+function videoIsLive(activeStream) {
+  if (!activeStream) return false;
+  const track = activeStream.getVideoTracks()[0];
+  if (!track) return false;
+  const settings = track.getSettings ? track.getSettings() : {};
+  if (settings.width === 0 || settings.height === 0) return false;
+  return track.readyState === 'live';
+}
+
+function stopStream() {
     if (stream) {
       stream.getTracks().forEach((t) => t.stop());
       stream = null;
@@ -232,6 +253,7 @@ const MediaCapture = (() => {
     canvas.toBlob((blob) => {
       if (!blob) { alert('No se pudo capturar la imagen.'); return; }
       stopStream();
+      currentFileKind = 'photo';
       onFileReady(new File([blob], `captura_${Date.now()}.jpg`, { type: 'image/jpeg' }));
     }, 'image/jpeg', 0.9);
   }
@@ -250,14 +272,20 @@ const MediaCapture = (() => {
 
     recorder.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
     recorder.onstop = () => {
-      const ext = mimeType ? mimeToExt(mimeType) : (captureMode === 'audio' ? 'webm' : 'mp4');
-      const base = captureMode === 'audio' ? 'audio' : 'video';
-      const blob = new Blob(chunks, { type: mimeType || 'video/webm' });
+      const kind = captureMode === 'audio' ? 'audio' : 'video';
+      const ext = mimeType ? mimeToExt(mimeType) : (kind === 'audio' ? 'webm' : 'webm');
+      const base = kind;
+      // Always stamp the Blob with an explicit container type. Some mobile
+      // browsers produce chunks without one, which used to arrive at the
+      // server as text/plain and get rejected.
+      const blobType = mimeType || containerMime(kind);
+      const blob = new Blob(chunks, { type: blobType });
       stopStream();
       resetPreview();
       setRecordingUI(false);
       if (blob.size === 0) { alert('No se grabó contenido.'); return; }
-      onFileReady(new File([blob], `${base}_${Date.now()}.${ext}`, { type: blob.type }));
+      currentFileKind = kind;
+      onFileReady(new File([blob], `${base}_${Date.now()}.${ext}`, { type: blobType }));
     };
 
     recorder.start();
@@ -297,6 +325,12 @@ const MediaCapture = (() => {
       if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(c)) return c;
     }
     return '';
+  }
+
+  // Prefer the container that matches the declared recording kind, so the Blob
+  // carries a usable MIME instead of text/plain.
+  function containerMime(mode) {
+    return mode === 'audio' ? 'audio/webm' : 'video/webm';
   }
 
   function mimeToExt(mime) {
@@ -344,11 +378,14 @@ const MediaCapture = (() => {
     sendBtn.addEventListener('click', () => {
       const questionEl = document.getElementById(currentQuestionId);
       const question = questionEl ? questionEl.value.trim() : '';
+      const kind = currentFileKind;
       close();
-      MediaCapture.onSubmit(file, question);
+      MediaCapture.onSubmit(file, question, kind);
     });
     preview.appendChild(sendBtn);
   }
+
+  let currentFileKind = null;
 
   let currentQuestionId = 'play-chat-input';
   let submitHandler = null;
@@ -392,8 +429,8 @@ const MediaCapture = (() => {
     open,
     close,
     // Calls the handler registered by open() once a capture is confirmed
-    onSubmit(file, question) {
-      if (submitHandler) submitHandler(file, question);
+    onSubmit(file, question, kind) {
+      if (submitHandler) submitHandler(file, question, kind);
     }
   };
 })();

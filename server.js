@@ -11,7 +11,7 @@ import fs from 'fs';
 import { initDb, getAllFilesWithSummaries, getChatLogs, logChat, searchSimilarFiles, logLoginAttempt, getRecentFailedAttempts } from './database.js';
 import { syncFolder, getSyncStatus } from './sync.js';
 import { verifyGoogleChatToken, handleChatMessage } from './chat.js';
-import { generateEmbedding, answerQuestion, prepareMediaPart, getBuildId } from './gemini.js';
+import { generateEmbedding, answerQuestion, prepareMediaPart, getBuildId, normalizeMimeType } from './gemini.js';
 
 const upload = multer({
   dest: join(dirname(fileURLToPath(import.meta.url)), 'temp', 'uploads'),
@@ -213,7 +213,7 @@ app.post('/api/admin/playground', apiLimiter, verifyAdmin, optionalUpload, async
   }
 
   try {
-    if (file) validateMediaFile(file);
+    if (file) validateMediaFile(file, req.body?.kind || null);
 
     const userQuestion = question.trim() || 'Analiza este archivo y dame información relevante.';
 
@@ -285,7 +285,7 @@ app.post('/api/admin/test-media', apiLimiter, verifyAdmin, upload.single('file')
     return res.status(400).json({ error: 'Debes proporcionar texto, un archivo (imagen/video/audio), o ambos.' });
   }
 
-  if (file) validateMediaFile(file);
+  if (file) validateMediaFile(file, req.body?.kind || null);
 
   try {
     // 1. Search RAG if there's text
@@ -299,7 +299,7 @@ app.post('/api/admin/test-media', apiLimiter, verifyAdmin, upload.single('file')
     // 2. Prepare media part (inlineData for images/small audio, fileData for videos)
     const mediaParts = [];
     if (file) {
-      const part = await prepareMediaPart(file.path, file.mimetype);
+      const part = await prepareMediaPart(file.path, file.mimetype, req.body?.kind || null);
       mediaParts.push(part);
     }
 
@@ -327,9 +327,14 @@ app.post('/api/admin/test-media', apiLimiter, verifyAdmin, upload.single('file')
 
 // Media types the Gemini inline/File API payloads can handle. Rejecting these
 // early gives a clear message instead of failing inside the Gemini SDK.
-function validateMediaFile(file) {
-  if (!/^(image|video|audio)\//.test(file.mimetype)) {
-    const err = new Error(`Tipo de archivo no soportado: ${file.mimetype}. Usa una imagen, video o audio.`);
+function validateMediaFile(file, declaredKind = null) {
+  const fileName = file.originalname || '';
+  const effective = normalizeMimeType(file.mimetype, fileName, file.path, declaredKind);
+  if (!/^(image|video|audio)\//.test(effective)) {
+    const err = new Error(
+      `Tipo de archivo no soportado: ${file.mimetype || 'sin tipo'} ` +
+      `(${fileName}). Usa una imagen, video o audio.`
+    );
     err.statusCode = 415;
     throw err;
   }

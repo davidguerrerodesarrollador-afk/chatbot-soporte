@@ -13,6 +13,25 @@ const EMBEDDING_MODEL = 'gemini-embedding-2';
 // is deployed instead of guessing.
 const BUILD_ID = 'config-mime-3';
 
+const VIDEO_EXTENSIONS = /\.(mkv|mp4|mov|m4v|avi|3gp|flv|wmv|ogv)$/i;
+const AUDIO_ONLY_EXTENSIONS = /\.(ogg|oga|opus|mp3|m4a|wav|aac|flac|wma)$/i;
+
+// MediaRecorder in Chrome/Safari records both video and audio as .webm, so the
+// extension alone cannot tell them apart. The caller knows which mode it used.
+const MEDIA_RECORDER_EXTENSIONS = /\.(webm|weba)$/i;
+
+function isVideoName(fileName = '') {
+  return VIDEO_EXTENSIONS.test(fileName);
+}
+
+function isMediaRecorderName(fileName = '') {
+  return MEDIA_RECORDER_EXTENSIONS.test(fileName);
+}
+
+function isAudioOnlyName(fileName = '') {
+  return AUDIO_ONLY_EXTENSIONS.test(fileName);
+}
+
 /**
  * Detect a MIME type from the file's magic bytes.
  * More reliable than the MIME Google Drive reports, which describes the
@@ -105,7 +124,7 @@ const MIME_ALIASES = {
  * Priority: magic bytes > reported MIME > file extension. Never returns an
  * empty value, because the SDK fails with "Can not determine mimeType".
  */
-function normalizeMimeType(mimeType, fileName = '', filePath = '') {
+export function normalizeMimeType(mimeType, fileName = '', filePath = '', declaredKind = null) {
   const reported = (mimeType || '').toLowerCase().trim();
   const ext = (fileName.match(/\.([a-z0-9]+)$/i)?.[1] || '').toLowerCase();
   const byExt = BY_EXTENSION[ext];
@@ -125,9 +144,27 @@ function normalizeMimeType(mimeType, fileName = '', filePath = '') {
     reported === 'application/octet-stream' ||
     reported === 'binary/octet-stream' ||
     !reported.includes('/');
+  const reportedIsGenericContainer = reported === 'text/plain';
+
+  // Browsers hand us MediaRecorder output with an empty or generic type. The
+  // declared recording kind is more reliable than the extension, because
+  // MediaRecorder writes .webm for both video and audio.
+  if (declaredKind === 'video' && (reportedIsUseless || reportedIsGenericContainer)) return 'video/webm';
+  if (declaredKind === 'audio' && (reportedIsUseless || reportedIsGenericContainer)) return 'audio/webm';
+
   if (reportedIsUseless && byExt) return byExt;
 
-  // 4. Otherwise keep what Drive reported, but never hand back an empty value
+  // 4. No declared kind, so infer from the extension
+  if (reportedIsUseless || reportedIsGenericContainer) {
+    if (isVideoName(fileName)) return 'video/webm';
+    if (isAudioOnlyName(fileName)) return 'audio/webm';
+    if (isMediaRecorderName(fileName)) return 'video/webm';
+    // text/plain on a real text file is correct; keep it
+    if (reported === 'text/plain' && !byExt) return 'text/plain';
+    if (byExt) return byExt;
+  }
+
+  // 5. Otherwise keep what Drive reported, but never hand back an empty value
   if (reported && reported !== 'application/octet-stream') return reported;
   return byExt || 'application/octet-stream';
 }
@@ -333,18 +370,16 @@ export async function generateEmbedding(text) {
  * Videos and large audio files are uploaded to the File API and referenced by URI.
  * @param {string} localFilePath Local path to the file.
  * @param {string} mimeType File MIME type.
+ * @param {'video'|'audio'|null} declaredKind What the browser recorded, when the
+ *   file extension can't tell (MediaRecorder writes .webm for both).
  * @returns {Promise<object>} A Gemini content part object ({inlineData} or {fileData}).
  */
-export function getBuildId() {
-  return BUILD_ID;
-}
-
-export async function prepareMediaPart(localFilePath, mimeType) {
+export async function prepareMediaPart(localFilePath, mimeType, declaredKind = null) {
   const ai = getGeminiClient();
   if (!ai) throw new Error('Gemini API client is not initialized.');
 
   const fileName = localFilePath.split(/[\\/]/).pop() || '';
-  mimeType = normalizeMimeType(mimeType, fileName, localFilePath);
+  mimeType = normalizeMimeType(mimeType, fileName, localFilePath, declaredKind);
 
   // Images: send as inline base64 data
   if (mimeType.startsWith('image/')) {
@@ -390,6 +425,10 @@ export async function prepareMediaPart(localFilePath, mimeType) {
  * @param {Array<object>} [mediaParts=[]] Array of pre-built Gemini content parts ({inlineData} or {fileData}).
  * @returns {Promise<string>} The troubleshooting answer.
  */
+export function getBuildId() {
+  return BUILD_ID;
+}
+
 export async function answerQuestion(question, sources, mediaParts = []) {
   const ai = getGeminiClient();
   if (!ai) {
@@ -405,14 +444,17 @@ export async function answerQuestion(question, sources, mediaParts = []) {
     }).join('\n');
   }
 
-  const systemPrompt = `Eres un asistente administrativo interno de la organización. Tu trabajo es resolver las dudas de los colaboradores sobre temas administrativos, contables, financieros, de recursos humanos, de compras, de inventario, de facturación y cualquier otro procedimiento interno documentado.
-Debes responder la pregunta del usuario usando ÚNICAMENTE los resúmenes de la documentación proporcionados y las imágenes o videos que el usuario haya adjuntado.
+  const systemPrompt = `Eres un copiloto interno de la organización. Tienes acceso a la documentación cargada por el administrador (textos, PDFs, imágenes y videos) y respondes las consultas de los colaboradores.
+
+Responde SIEMPRE lo que el usuario te pregunte, sin importar de qué tema se trate. No juzgues ni filtres las preguntas por su área: tu trabajo es contestar, no decidir si la pregunta te corresponde.
 Reglas:
-1. Apóyate estrictamente en el contexto proporcionado y en el contenido de las imágenes/videos. Si el contexto no contiene la respuesta, dile amablemente al usuario que no has encontrado la información en los documentos subidos y que contacte al área responsable. No inventes ni alucines respuestas, importes, plazos, políticas ni nombres de personas.
-2. Si la pregunta del usuario no está relacionada con la documentación (por ejemplo, conversación general o temas técnicos de programación), recuérdale con amabilidad que eres un asistente administrativo y que solo puedes ayudar con procedimientos e información documentados en la carpeta del administrador. Nunca te describas como asistente de mantenimiento de máquinas ni de soporte técnico.
-3. Sé profesional, claro y directo. Desglosa las respuestas en pasos numerados claros cuando el procedimiento lo requiera.
-4. Referencia los nombres de los documentos (ej: [Politica-de-Gastos.pdf]) de donde obtuviste la información.
-5. Responde SIEMPRE en español, incluso si el usuario te pregunta en otro idioma.
+1. Usa el contexto proporcionado y el contenido de los archivos adjuntos (imágenes, video o audio) para responder con detalle. Si algo relevante está ahí, aprovéchalo.
+2. Si el contexto no contiene la respuesta, NO inventes datos internos (montos, plazos, políticas, nombres de personas o procesos internos). Responde con lo que sí sabes del tema si resulta útil y menciona de forma natural y breve que ese dato específico no aparece en los documentos cargados.
+3. PROHIBIDO responder con frases que rechacen la consulta del usuario por su tema. No digas nunca "no es administrativo", "no corresponde a temas administrativos", "no puedo ayudarte con eso", "reformula tu pregunta" ni ninguna variante equivalente. Aunque la pregunta no tenga relación con la documentación, comparte siempre algo útil y nunca rechaces la pregunta.
+4. Si el usuario pregunta por algo que sí está en los documentos, respóndelo con seguridad y sin rodeos. No minimices la información ni la califiques de irrelevante.
+5. Sé profesional, claro y directo. Usa pasos numerados cuando el tema lo requiera.
+6. Referencia los documentos que usaste (ej: [Politica-de-Gastos.pdf]).
+7. Responde SIEMPRE en español, incluso si el usuario te pregunte en otro idioma.
 
 Contexto de la documentación:
 ${context}

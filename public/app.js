@@ -507,7 +507,7 @@ async function sendMiniChat() {
  * Send a captured or uploaded media file (photo, video or audio) to the bot.
  * The file is attached to the question from the given input box.
  */
-async function sendMediaToBot(messagesId, inputId, file, question) {
+async function sendMediaToBot(messagesId, inputId, file, question, kind) {
   appendMessage(messagesId, 'user', `${question || 'Analiza este archivo'}${file ? ` [${file.name || file.type}]` : ''}`);
   const typingId = appendTypingIndicator(messagesId);
 
@@ -518,6 +518,9 @@ async function sendMediaToBot(messagesId, inputId, file, question) {
     const formData = new FormData();
     if (question) formData.append('question', question);
     if (file) formData.append('file', file, file.name || 'captura');
+    // MediaRecorder writes .webm for both audio and video and some browsers
+    // send an empty MIME, so tell the server what we actually recorded.
+    if (kind) formData.append('kind', kind);
 
     const response = await fetch('/api/admin/playground', {
       method: 'POST',
@@ -561,7 +564,7 @@ function initCameraButtons() {
     miniBtn.addEventListener('click', () => {
       window.MediaCapture.open({
         questionId: 'mini-chat-input',
-        onSubmit: (file, question) => sendMediaToBot('mini-chat-messages', 'mini-chat-input', file, question)
+        onSubmit: (file, question, kind) => sendMediaToBot('mini-chat-messages', 'mini-chat-input', file, question, kind)
       });
     });
   }
@@ -572,7 +575,7 @@ function initCameraButtons() {
     playBtn.addEventListener('click', () => {
       window.MediaCapture.open({
         questionId: 'play-chat-input',
-        onSubmit: (file, question) => sendMediaToBot('play-chat-messages', 'play-chat-input', file, question)
+        onSubmit: (file, question, kind) => sendMediaToBot('play-chat-messages', 'play-chat-input', file, question, kind)
       });
     });
   }
