@@ -10,44 +10,122 @@ const MODEL_NAME = 'gemini-2.5-flash';
 const EMBEDDING_MODEL = 'gemini-embedding-2';
 
 /**
- * Normalize a MIME type to one the Gemini File API accepts.
- * Google Drive reports container formats Gemini doesn't list (e.g. .jfif,
- * .heic, .m4a), and the upload is rejected outright with an opaque error.
- * The bytes are identical to the supported format, so remapping is safe.
+ * Detect a MIME type from the file's magic bytes.
+ * More reliable than the MIME Google Drive reports, which describes the
+ * container and can be empty or unsupported (e.g. .jfif, .heic, .m4a).
  */
-function normalizeMimeType(mimeType, fileName = '') {
-  const raw = (mimeType || '').toLowerCase();
-  const ext = (fileName.match(/\.([a-z0-9]+)$/i)?.[1] || '').toLowerCase();
+function sniffMimeType(filePath) {
+  let fd;
+  try {
+    fd = fs.openSync(filePath, 'r');
+    const buf = Buffer.alloc(16);
+    fs.readSync(fd, buf, 0, 16, 0);
 
-  const byExtension = {
-    jfif: 'image/jpeg', jpe: 'image/jpeg', jpg: 'image/jpeg', jpeg: 'image/jpeg',
-    heic: 'image/heic', heif: 'image/heif',
-    m4a: 'audio/mp4', aac: 'audio/mp4', opus: 'audio/ogg', oga: 'audio/ogg',
-    wav: 'audio/wav', mp3: 'audio/mpeg',
-    m4v: 'video/mp4', mov: 'video/quicktime', mkv: 'video/x-matroska',
-  };
+    // ISO base media (mp4/m4a/mov/3gp/heic): ....ftyp<brand>
+    if (buf.length >= 12 && buf.toString('latin1', 4, 8) === 'ftyp') {
+      const brand = buf.toString('latin1', 8, 12).toLowerCase();
+      if (brand.startsWith('heic') || brand.startsWith('heix') || brand.startsWith('mif1')) return 'image/heic';
+      if (brand.startsWith('m4a')) return 'audio/mp4';
+      if (brand.startsWith('qt')) return 'video/quicktime';
+      if (brand.startsWith('3g')) return 'video/3gpp';
+      return 'video/mp4';
+    }
 
-  const aliases = {
-    'image/jfif': 'image/jpeg',
-    'image/jpg': 'image/jpeg',
-    'image/pjpeg': 'image/jpeg',
-    'audio/mp3': 'audio/mpeg',
-    'audio/x-m4a': 'audio/mp4',
-    'audio/m4a': 'audio/mp4',
-    'audio/x-wav': 'audio/wav',
-    'audio/vnd.wave': 'audio/wav',
-    'audio/x-flac': 'audio/flac',
-    'video/x-m4v': 'video/mp4',
-  };
-
-  if (aliases[raw]) return aliases[raw];
-  // A bare extension (e.g. "jpg") or a generic type; the extension is more reliable.
-  if (!raw || raw === 'application/octet-stream' || (!raw.includes('/') && raw !== 'application/pdf')) {
-    if (byExtension[ext]) return byExtension[ext];
-    if (ext === 'csv' || ext === 'tsv' || ext === 'txt') return 'text/plain';
-    if (ext === 'pdf') return 'application/pdf';
+    // RIFF....WEBP
+    if (buf.toString('latin1', 0, 4) === 'RIFF' && buf.toString('latin1', 8, 12) === 'WEBP') return 'image/webp';
+    // RIFF....WAVE
+    if (buf.toString('latin1', 0, 4) === 'RIFF' && buf.toString('latin1', 8, 12) === 'WAVE') return 'audio/wav';
+    // OGG
+    if (buf.toString('latin1', 0, 4) === 'OggS') return 'audio/ogg';
+    // fLaC
+    if (buf.toString('latin1', 0, 4) === 'fLaC') return 'audio/flac';
+    // ID3 or MPEG frame sync -> MP3
+    if (buf.toString('latin1', 0, 3) === 'ID3') return 'audio/mpeg';
+    if (buf[0] === 0xff && (buf[1] & 0xe0) === 0xe0) return 'audio/mpeg';
+    // JPEG / JFIF share the SOI + APP0 JFIF marker
+    if (buf[0] === 0xff && buf[1] === 0xd8) return 'image/jpeg';
+    // PNG
+    if (buf.toString('latin1', 0, 8) === '\x89PNG\r\n\x1a\n') return 'image/png';
+    // GIF
+    if (buf.toString('latin1', 0, 3) === 'GIF') return 'image/gif';
+    // BMP
+    if (buf.toString('latin1', 0, 2) === 'BM') return 'image/bmp';
+    // EBML -> Matroska/WebM
+    if (buf[0] === 0x1a && buf[1] === 0x45 && buf[2] === 0xdf && buf[3] === 0xa3) return 'video/x-matroska';
+    // PDF
+    if (buf.toString('latin1', 0, 4) === '%PDF') return 'application/pdf';
+  } catch {
+    return null;
+  } finally {
+    if (fd !== undefined) try { fs.closeSync(fd); } catch {}
   }
-  return mimeType;
+  return null;
+}
+
+// Extensions whose bytes match a supported format but whose container
+// Gemini's File API does not list.
+const BY_EXTENSION = {
+  jfif: 'image/jpeg', jpe: 'image/jpeg', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+  heic: 'image/heic', heif: 'image/heif',
+  m4a: 'audio/mp4', aac: 'audio/mp4', opus: 'audio/ogg', oga: 'audio/ogg',
+  mp3: 'audio/mpeg', wav: 'audio/wav',
+  m4v: 'video/mp4', mov: 'video/quicktime', mkv: 'video/x-matroska', '3gp': 'video/3gpp',
+  png: 'image/png', gif: 'image/gif', bmp: 'image/bmp', webp: 'image/webp',
+  mp4: 'video/mp4', webm: 'video/webm', avi: 'video/mp4', flv: 'video/mp4',
+  ogg: 'audio/ogg', wma: 'audio/mp3',
+  csv: 'text/plain', tsv: 'text/plain', txt: 'text/plain', pdf: 'application/pdf',
+};
+
+// Reported MIME values that need remapping to a supported type.
+const MIME_ALIASES = {
+  'image/jfif': 'image/jpeg',
+  'image/jpg': 'image/jpeg',
+  'image/pjpeg': 'image/jpeg',
+  'image/x-jfif': 'image/jpeg',
+  'audio/mp3': 'audio/mpeg',
+  'audio/x-m4a': 'audio/mp4',
+  'audio/m4a': 'audio/mp4',
+  'audio/x-mp4': 'audio/mp4',
+  'audio/x-wav': 'audio/wav',
+  'audio/vnd.wave': 'audio/wav',
+  'audio/wave': 'audio/wav',
+  'audio/x-flac': 'audio/flac',
+  'audio/x-ms-wma': 'audio/mp3',
+  'video/x-m4v': 'video/mp4',
+  'video/avi': 'video/mp4',
+  'video/x-msvideo': 'video/mp4',
+};
+
+/**
+ * Resolve a MIME type the Gemini File API will accept.
+ * Priority: magic bytes > reported MIME > file extension. Never returns an
+ * empty value, because the SDK fails with "Can not determine mimeType".
+ */
+function normalizeMimeType(mimeType, fileName = '', filePath = '') {
+  const reported = (mimeType || '').toLowerCase().trim();
+  const ext = (fileName.match(/\.([a-z0-9]+)$/i)?.[1] || '').toLowerCase();
+  const byExt = BY_EXTENSION[ext];
+
+  // 1. Magic bytes are the most trustworthy source
+  if (filePath) {
+    const sniffed = sniffMimeType(filePath);
+    if (sniffed) return sniffed;
+  }
+
+  // 2. Remap known aliases / bare extensions reported by Drive
+  if (MIME_ALIASES[reported]) return MIME_ALIASES[reported];
+
+  // 3. Trust the extension when Drive gave nothing usable
+  const reportedIsUseless =
+    !reported ||
+    reported === 'application/octet-stream' ||
+    reported === 'binary/octet-stream' ||
+    !reported.includes('/');
+  if (reportedIsUseless && byExt) return byExt;
+
+  // 4. Otherwise keep what Drive reported, but never hand back an empty value
+  if (reported && reported !== 'application/octet-stream') return reported;
+  return byExt || 'application/octet-stream';
 }
 
 // Initialize Gemini Client
@@ -132,7 +210,7 @@ ${textContent}`;
     return summary;
   }
 
-  const effectiveMimeType = normalizeMimeType(mimeType, fileName);
+  const effectiveMimeType = normalizeMimeType(mimeType, fileName, localFilePath);
   if (effectiveMimeType !== mimeType) {
     console.log(`[Gemini] Normalized MIME "${mimeType}" -> "${effectiveMimeType}" for "${fileName}"`);
   }
@@ -243,7 +321,7 @@ export async function prepareMediaPart(localFilePath, mimeType) {
   if (!ai) throw new Error('Gemini API client is not initialized.');
 
   const fileName = localFilePath.split(/[\\/]/).pop() || '';
-  mimeType = normalizeMimeType(mimeType, fileName);
+  mimeType = normalizeMimeType(mimeType, fileName, localFilePath);
 
   // Images: send as inline base64 data
   if (mimeType.startsWith('image/')) {
