@@ -53,9 +53,6 @@ const MediaCapture = (() => {
             <button type="button" class="media-mode-btn" data-mode="video">
               <i class="fa-solid fa-video"></i> Video
             </button>
-            <button type="button" class="media-mode-btn" data-mode="audio">
-              <i class="fa-solid fa-microphone"></i> Audio
-            </button>
           </div>
 
           <div class="media-actions">
@@ -86,7 +83,7 @@ const MediaCapture = (() => {
     document.getElementById('media-file-btn').addEventListener('click', () => {
       const input = document.createElement('input');
       input.type = 'file';
-      input.accept = 'image/*,video/*,audio/*';
+      input.accept = 'image/*,video/*';
       input.addEventListener('change', () => {
         if (input.files && input.files[0]) onFileReady(input.files[0]);
       });
@@ -100,21 +97,21 @@ const MediaCapture = (() => {
         captureMode = btn.dataset.mode;
         resetPreview();
         stopStream();
+        activeFacingIndex = 0;
         const placeholder = document.getElementById('media-placeholder');
         placeholder.classList.remove('hide');
+        document.getElementById('media-placeholder-text').textContent = 'Iniciando cámara...';
         document.getElementById('media-video').classList.add('hide');
-        const texts = {
-          photo: 'Presiona "Tomar foto" para abrir la cámara',
-          video: 'Presiona "Grabar video" para abrir la cámara',
-          audio: 'Presiona "Grabar audio" para usar el micrófono'
-        };
-        document.getElementById('media-placeholder-text').textContent = texts[captureMode];
-        const label = document.getElementById('media-capture-label');
-        const icons = { photo: 'Tomar foto', video: 'Grabar video', audio: 'Grabar audio' };
-        label.textContent = icons[captureMode];
+        const labels = { photo: 'Tomar foto', video: 'Grabar video' };
+        document.getElementById('media-capture-label').textContent = labels[captureMode];
         const capBtn = document.getElementById('media-capture-btn');
         capBtn.classList.remove('recording');
         capBtn.querySelector('i').className = 'fa-solid fa-circle';
+
+        startStream().then(() => onStreamReady()).catch((err) => {
+          placeholder.classList.remove('hide');
+          document.getElementById('media-placeholder-text').textContent = err.message;
+        });
       });
     });
 
@@ -122,14 +119,10 @@ const MediaCapture = (() => {
     document.getElementById('media-modal').addEventListener('click', (e) => {
       if (e.target.id === 'media-modal') close();
     });
-  }
-
-  function ensureAudioOnly() {
-    stream.getAudioTracks().forEach((t) => t.stop());
-  }
+}
 
   // Prefer the rear camera on phones, falling back through increasingly loose
-// constraints until something produces a usable image.
+  // constraints until something produces a usable image.
 const VIDEO_PREFERENCES = [
   { exact: 'environment' },
   { ideal: 'environment' },
@@ -144,24 +137,19 @@ async function startStream(preferredIndex = 0) {
   }
   if (stream) return;
 
-  const isAudio = captureMode === 'audio';
-  const attempts = isAudio
-    ? [{ audio: true }]
-    : VIDEO_PREFERENCES.map((facingMode) => ({
-        video: facingMode ? { facingMode } : true,
-        audio: captureMode === 'video',
-      }));
+  const attempts = VIDEO_PREFERENCES.map((facingMode) => ({
+    video: facingMode ? { facingMode } : true,
+    audio: captureMode === 'video',
+  }));
 
-  const order = isAudio
-    ? attempts
-    : [...attempts.slice(preferredIndex), ...attempts.slice(0, preferredIndex)];
+  const order = [...attempts.slice(preferredIndex), ...attempts.slice(0, preferredIndex)];
 
   let lastError = null;
   for (const constraints of order) {
     try {
       const candidate = await navigator.mediaDevices.getUserMedia(constraints);
       // A dead track renders black, so reject it and keep trying.
-      if (!isAudio && !(await videoIsLive(candidate))) {
+      if (!(await videoIsLive(candidate))) {
         candidate.getTracks().forEach((t) => t.stop());
         continue;
       }
@@ -178,8 +166,8 @@ async function startStream(preferredIndex = 0) {
 function onStreamReady() {
   const video = document.getElementById('media-video');
   video.srcObject = stream;
-  video.classList.toggle('hide', captureMode === 'audio');
-  document.getElementById('media-placeholder').classList.toggle('hide', captureMode !== 'audio');
+  video.classList.remove('hide');
+  document.getElementById('media-placeholder').classList.add('hide');
   video.play().catch(() => {});
   updateFlipButton();
 }
@@ -188,16 +176,18 @@ function onStreamReady() {
 async function updateFlipButton() {
     const btn = document.getElementById('media-flip');
     if (!btn) return;
-    if (captureMode === 'audio' || !navigator.mediaDevices?.enumerateDevices) {
+    if (!navigator.mediaDevices?.enumerateDevices) {
       btn.classList.add('hide');
       return;
     }
     try {
       const devices = await navigator.mediaDevices.enumerateDevices();
       const cameras = devices.filter((d) => d.kind === 'videoinput');
+      // Some phones expose only one camera to the browser but still support
+      // facingMode, so show the control whenever there is more than one option.
       btn.classList.toggle('hide', cameras.length < 2);
     } catch {
-      btn.classList.add('hide');
+      btn.classList.remove('hide');
     }
   }
 
@@ -272,21 +262,20 @@ let activeFacingIndex = 0;
 
 // Flip between the front and rear camera.
 async function switchCamera() {
-  if (captureMode === 'audio' || !stream) return;
-  const video = document.getElementById('media-video');
+  if (!stream) return;
   if (recorder && recorder.state === 'recording') return;
 
-  const wasHidden = video.classList.contains('hide');
   stopStream();
   try {
     // Move past the current attempt so we land on the other camera
     await startStream(activeFacingIndex + 1);
     onStreamReady();
   } catch (err) {
-    alert(err.message);
-    return;
+    // Nothing worked; show the reason instead of leaving a black screen
+    const placeholder = document.getElementById('media-placeholder');
+    placeholder.classList.remove('hide');
+    document.getElementById('media-placeholder-text').textContent = err.message;
   }
-  if (wasHidden) video.classList.add('hide');
 }
 
 
@@ -370,28 +359,25 @@ function stopStream() {
 
     recorder.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
     recorder.onstop = () => {
-      const kind = captureMode === 'audio' ? 'audio' : 'video';
-      const ext = mimeType ? mimeToExt(mimeType) : (kind === 'audio' ? 'webm' : 'webm');
-      const base = kind;
+      const kind = 'video';
       // Always stamp the Blob with an explicit container type. Some mobile
       // browsers produce chunks without one, which used to arrive at the
       // server as text/plain and get rejected.
-      const blobType = mimeType || containerMime(kind);
+      const blobType = mimeType || 'video/webm';
+      const ext = mimeToExt(blobType);
       const blob = new Blob(chunks, { type: blobType });
       stopStream();
       resetPreview();
       setRecordingUI(false);
       if (blob.size === 0) { alert('No se grabó contenido.'); return; }
       currentFileKind = kind;
-      onFileReady(new File([blob], `${base}_${Date.now()}.${ext}`, { type: blobType }));
+      onFileReady(new File([blob], `video_${Date.now()}.${ext}`, { type: blobType }));
     };
 
     recorder.start();
     startTime = Date.now();
     setRecordingUI(true);
     document.getElementById('media-rec-indicator').classList.remove('hide');
-
-    if (captureMode === 'audio') ensureAudioOnly();
 
     const capBtn = document.getElementById('media-capture-btn');
     capBtn.querySelector('i').className = 'fa-solid fa-square';
@@ -409,26 +395,18 @@ function stopStream() {
     if (isRecording) {
       label.textContent = 'Detener';
     } else {
-      const labels = { photo: 'Tomar foto', video: 'Grabar video', audio: 'Grabar audio' };
+      const labels = { photo: 'Tomar foto', video: 'Grabar video' };
       label.textContent = labels[captureMode] || 'Capturar';
       if (tickTimer) { clearInterval(tickTimer); tickTimer = null; }
     }
   }
 
-  function pickMimeType(mode) {
-    const candidates = mode === 'audio'
-      ? ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg']
-      : ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4'];
+  function pickMimeType() {
+    const candidates = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4'];
     for (const c of candidates) {
       if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(c)) return c;
     }
     return '';
-  }
-
-  // Prefer the container that matches the declared recording kind, so the Blob
-  // carries a usable MIME instead of text/plain.
-  function containerMime(mode) {
-    return mode === 'audio' ? 'audio/webm' : 'video/webm';
   }
 
   function mimeToExt(mime) {
@@ -497,19 +475,27 @@ function stopStream() {
     document.querySelectorAll('.media-mode-btn').forEach((b) => {
       b.classList.toggle('active', b.dataset.mode === captureMode);
     });
-    const labels = { photo: 'Tomar foto', video: 'Grabar video', audio: 'Grabar audio' };
-    document.getElementById('media-capture-label').textContent = labels[captureMode];
+    const labels = { photo: 'Tomar foto', video: 'Grabar video' };
+    document.getElementById('media-capture-label').textContent = labels[captureMode] || 'Capturar';
     const texts = {
-      photo: 'Presiona "Tomar foto" para abrir la cámara',
-      video: 'Presiona "Grabar video" para abrir la cámara',
-      audio: 'Presiona "Grabar audio" para usar el micrófono'
+      photo: 'Iniciando cámara...',
+      video: 'Iniciando cámara...'
     };
-    document.getElementById('media-placeholder-text').textContent = texts[captureMode];
+    document.getElementById('media-placeholder-text').textContent = texts[captureMode] || 'Preparando...';
 
     resetPreview();
     stopStream();
     setRecordingUI(false);
+    activeFacingIndex = 0;
     document.getElementById('media-modal').classList.add('active');
+
+    // Start the camera as soon as the modal opens, otherwise the preview stays
+    // black until the user presses the capture button.
+    startStream().then(() => onStreamReady()).catch((err) => {
+      const placeholder = document.getElementById('media-placeholder');
+      placeholder.classList.remove('hide');
+      document.getElementById('media-placeholder-text').textContent = err.message;
+    });
   }
 
   function close() {
