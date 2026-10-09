@@ -58,6 +58,27 @@ function showLoginError(msg) {
   errEl.classList.remove('hide');
 }
 
+// Keep the sync metric fresh (relative time) without hitting the API again.
+function startSyncClock() {
+  if (syncClockTimer) clearInterval(syncClockTimer);
+  syncClockTimer = setInterval(() => {
+    const el = document.getElementById('metric-sync-time');
+    const current = el.dataset.at;
+    if (current) el.textContent = formatRelative(new Date(current));
+  }, 30000);
+}
+
+function formatRelative(date) {
+  const mins = Math.round((Date.now() - date.getTime()) / 60000);
+  if (mins < 1) return 'Último: hace un momento';
+  if (mins < 60) return `Último: hace ${mins} min`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `Último: hace ${hours} h`;
+  return `Último: hace ${Math.round(hours / 24)} d`;
+}
+
+let syncClockTimer = null;
+
 // ----------------------------------------------------
 // Setup Global Event Listeners
 // ----------------------------------------------------
@@ -250,7 +271,9 @@ async function loadStatus() {
       
       if (data.sync.lastSyncTime) {
         const date = new Date(data.sync.lastSyncTime);
-        syncTimeText.textContent = `Último: ${date.toLocaleDateString()} ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+        syncTimeText.dataset.at = date.toISOString();
+        syncTimeText.textContent = formatRelative(date);
+        startSyncClock();
       } else {
         syncTimeText.textContent = 'Último: Nunca';
       }
