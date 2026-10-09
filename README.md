@@ -92,6 +92,36 @@ Para que el bot pueda responder a los usuarios las 24 horas, debes hospedar el s
 2. En tu hosting, añade los valores del `.env` como variables de entorno de producción.
 3. Asegúrate de obtener una URL HTTPS (ej. `https://mi-chatbot-soporte.render.com`).
 
+### 1.1 Persistencia del índice (solo en Render)
+
+La base de conocimiento es un archivo SQLite (`data/bot.db`). Los archivos originales viven
+en Google Drive, pero los resúmenes que Gemini genera y los vectores de búsqueda se guardan
+en ese archivo local.
+
+En las instancias gratuitas el disco es efímero: **cada despliegue borra el índice** y hay que
+volver a sincronizar la carpeta de Drive (lo que vuelve a consumir API de Gemini).
+
+Para evitarlo:
+
+1. Cambia el **instance type** del servicio de `Free` a `Starter` (o superior). Las instancias
+   gratuitas no admiten disco.
+2. En **Settings → Disks → Add Disk**, monta un disco en la ruta exacta que usa el código:
+
+   | Campo | Valor |
+   |---|---|
+   | Name | `knowledge` (solo etiqueta) |
+   | Mount Path | `/opt/render/project/src/data` |
+   | Size | `1 GB` |
+
+   La ruta debe ser absoluta y empezar con `/`. `database.js` resuelve la base con
+   `join(__dirname, 'data')`, que en Render equivale a `/opt/render/project/src/data`.
+
+3. Guarda y ejecuta **Sincronizar Drive** una vez para reconstruir el índice.
+
+A partir de ahí los despliegues conservan el índice. Nota: agregar un disco desactiva los
+despliegues sin downtime (habrá unos segundos de interrupción) y limita el servicio a una
+sola instancia.
+
 ### 2. Registrar el Bot en Google Chat
 1. Abre la **Google Cloud Console** de tu proyecto.
 2. Busca la **Google Chat API** en el buscador superior y entra en **Configuración**.
