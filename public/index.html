@@ -98,12 +98,12 @@
         <div class="metrics-grid">
           <div class="metric-card glass-panel card-glow-indigo">
             <div class="metric-header">
-              <span class="metric-title">Documentos Synced</span>
+              <span class="metric-title">Documentos indexados</span>
               <div class="metric-icon bg-indigo"><i class="fa-solid fa-file-invoice"></i></div>
             </div>
             <div class="metric-body">
               <span class="metric-val" id="metric-docs">0</span>
-              <span class="metric-sub">Archivos activos en memoria</span>
+              <span class="metric-sub">Archivos disponibles para consulta</span>
             </div>
           </div>
 
@@ -127,6 +127,20 @@
               <span class="metric-val text-green" id="metric-status">Listo</span>
               <span class="metric-sub" id="metric-sync-time">Último: Nunca</span>
             </div>
+          </div>
+        </div>
+
+        <!-- Database diagnostics: shows where the index is stored -->
+        <div class="db-diag glass-panel">
+          <div class="db-diag-head">
+            <i class="fa-solid fa-database"></i>
+            <span>Almacenamiento de la base de conocimiento</span>
+          </div>
+          <div class="db-diag-body">
+            <div><span class="db-diag-label">Ruta</span><code id="db-path">-</code></div>
+            <div><span class="db-diag-label">Tamaño</span><span id="db-size">-</span></div>
+            <div><span class="db-diag-label">Documentos</span><span id="db-count">-</span></div>
+            <div><span class="db-diag-label">Disco persistente</span><span id="db-persistent">-</span></div>
           </div>
         </div>
 

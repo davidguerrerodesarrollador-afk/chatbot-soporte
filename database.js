@@ -14,6 +14,31 @@ if (!fs.existsSync(dbDir)) {
 
 const db = new sqlite3.Database(dbPath);
 
+/**
+ * Where the knowledge base physically lives, and how big it is.
+ * On Render the disk must be mounted on the exact path reported by `dbPath`,
+ * otherwise the index is written to the ephemeral container filesystem.
+ */
+export function getDbInfo() {
+  let sizeBytes = 0;
+  try {
+    sizeBytes = fs.statSync(dbPath).size;
+  } catch {
+    sizeBytes = -1;
+  }
+  return {
+    dbPath,
+    dbExists: fs.existsSync(dbPath),
+    dbSizeBytes: sizeBytes,
+  };
+}
+
+// Count documents, used to confirm the index survived a deploy
+export async function countFiles() {
+  const row = await get('SELECT COUNT(*) as count FROM files');
+  return row ? row.count : 0;
+}
+
 // Helper to run query with promise
 const run = (sql, params = []) => {
   return new Promise((resolve, reject) => {

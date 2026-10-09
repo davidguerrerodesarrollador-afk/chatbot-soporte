@@ -8,7 +8,7 @@ import { fileURLToPath } from 'url';
 import fs from 'fs';
 
 // Import our modules
-import { initDb, getAllFilesWithSummaries, getChatLogs, logChat, logLoginAttempt, getRecentFailedAttempts } from './database.js';
+import { initDb, getAllFilesWithSummaries, getChatLogs, logChat, logLoginAttempt, getRecentFailedAttempts, getDbInfo, countFiles } from './database.js';
 import { syncFolder, getSyncStatus } from './sync.js';
 import { verifyGoogleChatToken, handleChatMessage } from './chat.js';
 import { answerQuestion, prepareMediaPart, getBuildId, normalizeMimeType } from './gemini.js';
@@ -132,12 +132,13 @@ app.get('/api/admin/status', apiLimiter, verifyAdmin, async (req, res) => {
     // Get simple counts from DB
     const files = await getAllFilesWithSummaries();
     const logs = await getChatLogs();
-    
+
     res.json({
       folderId: folderId.includes('your_drive_folder_id') ? 'No configurada' : folderId,
       filesCount: files.length,
       logsCount: logs.length,
       build: getBuildId(),
+      db: { ...getDbInfo(), filesIndexed: await countFiles() },
       sync: syncStatus
     });
   } catch (error) {
