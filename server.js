@@ -8,10 +8,11 @@ import { fileURLToPath } from 'url';
 import fs from 'fs';
 
 // Import our modules
-import { initDb, getAllFilesWithSummaries, getChatLogs, logChat, searchSimilarFiles, logLoginAttempt, getRecentFailedAttempts } from './database.js';
+import { initDb, getAllFilesWithSummaries, getChatLogs, logChat, logLoginAttempt, getRecentFailedAttempts } from './database.js';
 import { syncFolder, getSyncStatus } from './sync.js';
 import { verifyGoogleChatToken, handleChatMessage } from './chat.js';
-import { generateEmbedding, answerQuestion, prepareMediaPart, getBuildId, normalizeMimeType } from './gemini.js';
+import { answerQuestion, prepareMediaPart, getBuildId, normalizeMimeType } from './gemini.js';
+import { retrieveContext } from './rag.js';
 
 const upload = multer({
   dest: join(dirname(fileURLToPath(import.meta.url)), 'temp', 'uploads'),
@@ -217,38 +218,21 @@ app.post('/api/admin/playground', apiLimiter, verifyAdmin, optionalUpload, async
 
     const userQuestion = question.trim() || 'Analiza este archivo y dame información relevante.';
 
-    // RAG Flow
-    let relevantFiles = [];
-    if (question.trim()) {
-      const queryEmbedding = await generateEmbedding(question);
-      const matchedFiles = await searchSimilarFiles(queryEmbedding, 3);
-      relevantFiles = matchedFiles.filter(f => f.score >= 0.2);
-    }
-
     const mediaParts = [];
     if (file) {
-      const part = await prepareMediaPart(file.path, file.mimetype);
+      const part = await prepareMediaPart(file.path, file.mimetype, req.body?.kind || null);
       mediaParts.push(part);
     }
 
-    // When media is attached without text, describe it first to drive the search
-    if (mediaParts.length > 0 && relevantFiles.length === 0) {
-      try {
-        const desc = await answerQuestion(
-          'Describe en detalle el contenido de este archivo. Genera palabras clave específicas.',
-          [], mediaParts, { describeOnly: true }
-        );
-        const descEmbedding = await generateEmbedding(desc);
-        const descMatched = await searchSimilarFiles(descEmbedding, 3);
-        relevantFiles = descMatched.filter(f => f.score >= 0.2);
-      } catch (e) {
-        console.log('[Server] Media description search failed:', e.message);
-      }
-    }
+    // Search Drive using the written question and the attachment together
+    const relevantFiles = await retrieveContext(question, mediaParts);
 
     const answer = await answerQuestion(userQuestion, relevantFiles, mediaParts);
 
-    const sourceNames = relevantFiles.map(f => `${f.name} (Similitud: ${Math.round(f.score * 100)}%)`);
+    const sourceNames = relevantFiles.map(f => {
+      const both = f.matchedBy?.length > 1 ? ' [texto + archivo]' : '';
+      return `${f.name} (Similitud: ${Math.round(f.score * 100)}%)${both}`;
+    });
     if (mediaParts.length) sourceNames.push(`Archivo adjunto (${file.mimetype})`);
 
     // Save playground logs separately
@@ -288,26 +272,24 @@ app.post('/api/admin/test-media', apiLimiter, verifyAdmin, upload.single('file')
   if (file) validateMediaFile(file, req.body?.kind || null);
 
   try {
-    // 1. Search RAG if there's text
-    let relevantFiles = [];
-    if (question.trim()) {
-      const queryEmbedding = await generateEmbedding(question);
-      const matchedFiles = await searchSimilarFiles(queryEmbedding, 3);
-      relevantFiles = matchedFiles.filter(f => f.score >= 0.2);
-    }
-
-    // 2. Prepare media part (inlineData for images/small audio, fileData for videos)
+    // 1. Prepare media part (inlineData for images/small audio, fileData for videos)
     const mediaParts = [];
     if (file) {
       const part = await prepareMediaPart(file.path, file.mimetype, req.body?.kind || null);
       mediaParts.push(part);
     }
 
+    // 2. Search Drive with the question and the attachment together
+    const relevantFiles = await retrieveContext(question, mediaParts);
+
     // 3. Generate answer
     const userQuestion = question.trim() || 'Analiza este archivo y dame información relevante.';
     const answer = await answerQuestion(userQuestion, relevantFiles, mediaParts);
 
-    const sourceNames = relevantFiles.map(f => `${f.name} (Similitud: ${Math.round(f.score * 100)}%)`);
+    const sourceNames = relevantFiles.map(f => {
+      const both = f.matchedBy?.length > 1 ? ' [texto + archivo]' : '';
+      return `${f.name} (Similitud: ${Math.round(f.score * 100)}%)${both}`;
+    });
 
     res.json({
       answer,

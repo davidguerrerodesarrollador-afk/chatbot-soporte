@@ -1,6 +1,7 @@
 import { OAuth2Client, JWT } from 'google-auth-library';
-import { generateEmbedding, answerQuestion, prepareMediaPart } from './gemini.js';
-import { searchSimilarFiles, logChat } from './database.js';
+import { answerQuestion, prepareMediaPart } from './gemini.js';
+import { logChat } from './database.js';
+import { retrieveContext } from './rag.js';
 import { downloadFile } from './drive.js';
 import fs from 'fs';
 import { dirname, join } from 'path';
@@ -165,15 +166,6 @@ async function processMessage(question, attachments, senderName, senderId, space
   const tempDir = join(__dirname, 'temp');
   if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
 
-  // 1. Find relevant docs via RAG
-  let relevantFiles = [];
-  if (question && question.trim()) {
-    const queryEmbedding = await generateEmbedding(question);
-    const matchedFiles = await searchSimilarFiles(queryEmbedding, 3);
-    relevantFiles = matchedFiles.filter(f => f.score >= 0.2);
-  }
-
-  // 2. Process attachments (images/videos/audio) uploaded by the user in Chat
   const mediaParts = [];
   const tempPaths = [];
   const failedAttachments = [];
@@ -216,17 +208,8 @@ async function processMessage(question, attachments, senderName, senderId, space
     }
   }
 
-  // 2.5 If media attached but no docs found by text, use media description to search
-  if (mediaParts.length > 0 && relevantFiles.length === 0) {
-    try {
-      const descAnswer = await answerQuestion('Describe en detalle el contenido de este archivo. Genera palabras clave específicas.', [], mediaParts, { describeOnly: true });
-      const descEmbedding = await generateEmbedding(descAnswer);
-      const descMatchedFiles = await searchSimilarFiles(descEmbedding, 3);
-      relevantFiles = descMatchedFiles.filter(f => f.score >= 0.2);
-    } catch (e) {
-      console.log('[Chat] Media description search failed:', e.message);
-    }
-  }
+  // 2. Search Drive with both the written question and the attachment
+  const relevantFiles = await retrieveContext(question, mediaParts);
 
   try {
     // 3. Generate answer using text + media context
@@ -236,7 +219,10 @@ async function processMessage(question, attachments, senderName, senderId, space
     console.log(`[Chat] Gemini answer took ${Date.now() - start}ms`);
 
     // 4. Save to chat logs
-    const sourceNames = relevantFiles.map(f => `${f.name} (Similitud: ${Math.round(f.score * 100)}%)`);
+    const sourceNames = relevantFiles.map(f => {
+      const both = f.matchedBy?.length > 1 ? ' [texto + archivo]' : '';
+      return `${f.name} (Similitud: ${Math.round(f.score * 100)}%)${both}`;
+    });
     if (mediaParts.length > 0) {
       sourceNames.push(...mediaParts.map((_, i) => `Archivo adjunto ${i + 1}`));
     }
