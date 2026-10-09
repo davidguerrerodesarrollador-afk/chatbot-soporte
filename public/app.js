@@ -218,27 +218,6 @@ async function initDashboard() {
   loadLogs();
 }
 
-// The expected mount path for the persistent disk on Render.
-const EXPECTED_DB_PATH = '/opt/render/project/src/data/bot.db';
-
-function renderDbDiagnostics(db) {
-  if (!db) return;
-
-  document.getElementById('db-path').textContent = db.dbPath || '-';
-
-  const kb = db.dbSizeBytes;
-  document.getElementById('db-size').textContent =
-    kb < 0 ? 'No encontrado' : `${(kb / 1024).toFixed(1)} KB`;
-
-  document.getElementById('db-count').textContent = `${db.filesIndexed ?? 0}`;
-
-  // The index only survives deploys when the database file sits on the disk
-  const onDisk = db.dbPath === EXPECTED_DB_PATH;
-  const el = document.getElementById('db-persistent');
-  el.textContent = onDisk ? 'Sí (montado)' : 'No (ephemeral)';
-  el.className = onDisk ? 'ok' : 'bad';
-}
-
 async function loadStatus() {
   try {
     const response = await fetch('/api/admin/status', {
@@ -252,8 +231,6 @@ async function loadStatus() {
     document.getElementById('drive-folder-badge').textContent = data.folderId;
     document.getElementById('metric-docs').textContent = data.filesCount;
     document.getElementById('metric-queries').textContent = data.logsCount;
-
-    renderDbDiagnostics(data.db);
 
     // Render Sync Info
     const statusVal = document.getElementById('metric-status');
