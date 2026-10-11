@@ -150,10 +150,70 @@ function safeFileName(name, fallback) {
   return cleaned || fallback;
 }
 
+// Greetings and courtesy phrases: answer directly instead of running a search
+// and reporting "not found in the documentation", which reads like a bug.
+// Longer phrases first: the alternation matches left to right, so "buenas"
+// would otherwise swallow "buenas tardes" and leave "tardes" dangling.
+const GREETING_PATTERNS = [
+  /^\s*(en\s+qu[eé]\s+me\s+puedes\s+ayudar|qu[eé]\s+puedes\s+hacer|qu[eé]\s+haces|c[oó]mo\s+me\s+ayudas|en\s+qu[eé]\s+te\s+puedo\s+preguntar|para\s+qu[eé]\s+sirves)\b/i,
+  /^\s*(muchas\s+gracias|mil\s+gracias|te\s+lo\s+agradezco|thank\s+you|gracias|thanks)\b/i,
+  /^\s*(buenas\s+tardes|buenas\s+noches|buenos\s+d[ií]as|buen\s+d[ií]a|hasta\s+luego|nos\s+vemos|qu[eé]\s+onda|qu[eé]\s+tal|qui[eé]n\s+eres)\b/i,
+  /^\s*(hola|holis|hey|hi|hello|saludos|buenas)\b/i,
+  /^\s*(adi[oó]s|chao|bye)\b/i,
+];
+
+// What may follow the matched phrase and still be just a greeting: filler
+// words, or nothing but punctuation ("hola!", "gracias.").
+const GREETING_FILLERS = /^(?:[\s,.!¡¿?*-]*(?:bot|asistente|equipo|help|help me|amigo|amiga|soy|est[aá]s\s+aqu[ií])[\s,.!¡¿?*-]*)+$/i;
+const PUNCTUATION_ONLY = /^[\s,.!¡¿?*\-]+$/;
+
+function detectGreeting(question) {
+  if (!question || typeof question !== 'string') return null;
+  const text = question.trim();
+  if (!text || text.length > 80) return null;
+
+  // .find() would return the RegExp itself, not the match, so exec explicitly
+let greetingMatch = null;
+for (const re of GREETING_PATTERNS) {
+  const m = re.exec(text);
+  if (m) { greetingMatch = m; break; }
+}
+if (!greetingMatch) return null;
+
+  // "hola, ¿cuál es el precio?" is a real question, not a greeting. Only treat
+  // it as one when nothing meaningful follows the matched phrase.
+  const rest = text.slice(greetingMatch[0].length);
+  if (rest && !PUNCTUATION_ONLY.test(rest) && !GREETING_FILLERS.test(rest)) return null;
+
+  if (/\b(gracias|thank)\b/i.test(text)) {
+    return '¡Con gusto! ¿En qué más te puedo ayudar?';
+  }
+  if (/\b(adi[oó]s|chao|bye|hasta luego|nos vemos)\b/i.test(text)) {
+    return '¡Hasta luego! Aquí estaré cuando necesites algo.';
+  }
+  if (/\b(en\s+qu[eé]\s+me\s+puedes\s+ayudar|qu[eé]\s+puedes\s+hacer|qu[eé]\s+haces|c[oó]mo\s+me\s+ayudas|para\s+qu[eé]\s+sirves|qui[eé]n\s+eres)\b/i.test(text)) {
+    return 'Puedo responder consultas sobre la documentación de la empresa y, si no encuentro la respuesta, buscar en internet. También analizo fotos, videos y notas de voz que me envíes. ¿Qué necesitas?';
+  }
+  return '¡Hola! Soy tu asistente de consulta. Puedo responderte sobre la documentación de la empresa y, si no encuentro algo, buscarlo en internet. También puedo analizar fotos, videos o notas de voz. ¿En qué te ayudo?';
+}
+
 /**
  * Process the user's question message, optionally with attached images/videos.
  */
 async function processMessage(question, attachments, senderName, senderId, spaceName) {
+  // Saludo: responder de inmediato, sin buscar documentos
+  const greeting = detectGreeting(question);
+  if (greeting) {
+    if (spaceName) {
+      try {
+        await sendChatMessage(spaceName, greeting);
+      } catch (e) {
+        console.log('[Chat] Failed to send greeting reply:', e.message);
+      }
+    }
+    return { text: greeting };
+  }
+
   // Send "Procesando información..." immediately via Chat API
   if (spaceName) {
     try {
@@ -190,20 +250,29 @@ async function processMessage(question, attachments, senderName, senderId, space
 
       try {
         if (uploadedResource) {
-          console.log(`[Chat] Downloading Chat attachment: ${att.contentName} (${att.contentType})`);
+          console.log(`[Chat] Downloading Chat attachment: ${att.contentName} (${att.contentType}) src=${uploadedResource}`);
           await downloadUploadedAttachment(uploadedResource, tempPath);
         } else {
-          console.log(`[Chat] Downloading Drive attachment: ${att.contentName} (${att.contentType})`);
+          console.log(`[Chat] Downloading Drive attachment: ${att.contentName} (${att.contentType}) id=${driveFileId}`);
           await downloadFile(driveFileId, tempPath);
         }
+
+        const bytes = fs.existsSync(tempPath) ? fs.statSync(tempPath).size : 0;
+        console.log(`[Chat] Downloaded ${bytes} bytes to ${tempPath}`);
 
         const mimeType = normalizeAudioMimeType(att.contentType);
         console.log(`[Chat] Preparing media for Gemini (${mimeType})...`);
         const part = await prepareMediaPart(tempPath, mimeType);
         mediaParts.push(part);
       } catch (err) {
-        console.error(`[Chat] Failed to process attachment "${att.contentName || 'sin nombre'}":`, err.message);
-        failedAttachments.push(att.contentName || 'archivo sin nombre');
+        console.error(`[Chat] Failed to process attachment "${att.contentName || 'sin nombre'}":`, err);
+        // Keep the reason: without it a failed download and a failed Gemini
+        // call are indistinguishable from the outside.
+        failedAttachments.push({
+          name: att.contentName || 'archivo sin nombre',
+          reason: err.message,
+          type: att.contentType || 'sin tipo',
+        });
       }
     }
   }
@@ -248,7 +317,10 @@ async function processMessage(question, attachments, senderName, senderId, space
       responseText += `\n\n⚠️ Recibí tu mensaje pero no pude descargar los archivos adjuntos. Intenta de nuevo.`;
     }
     if (failedAttachments.length > 0) {
-      responseText += `\n\n⚠️ No pude procesar ${failedAttachments.length} archivo(s): ${failedAttachments.join(', ')}.`;
+      const detail = failedAttachments
+        .map((f) => `${f.name} (${f.type}): ${f.reason}`)
+        .join(' | ');
+      responseText += `\n\n⚠️ No pude procesar ${failedAttachments.length} archivo(s): ${detail}`;
     }
 
     // Send answer via Chat API
