@@ -14,7 +14,7 @@ const EMBEDDING_MODEL = 'gemini-embedding-2';
 const BUILD_ID = 'config-mime-3';
 
 const VIDEO_EXTENSIONS = /\.(mkv|mp4|mov|m4v|avi|3gp|flv|wmv|ogv)$/i;
-const AUDIO_ONLY_EXTENSIONS = /\.(ogg|oga|opus|mp3|m4a|wav|aac|flac|wma)$/i;
+const AUDIO_ONLY_EXTENSIONS = /\.(ogg|oga|opus|mp3|m4a|m4b|wav|aac|flac|wma)$/i;
 
 // MediaRecorder in Chrome/Safari records both video and audio as .webm, so the
 // extension alone cannot tell them apart. The caller knows which mode it used.
@@ -131,11 +131,29 @@ export function normalizeMimeType(mimeType, fileName = '', filePath = '', declar
   const reported = (mimeType || '').toLowerCase().trim();
   const ext = (fileName.match(/\.([a-z0-9]+)$/i)?.[1] || '').toLowerCase();
   const byExt = BY_EXTENSION[ext];
+  // Extensions that can only ever hold audio.
+  const audioOnlyExt = isAudioOnlyName(fileName);
 
   // 1. Magic bytes are the most trustworthy source
   if (filePath) {
     const sniffed = sniffMimeType(filePath);
-    if (sniffed) return sniffed;
+    if (sniffed) {
+      // Voice notes are AAC inside an ISO base-media container, which is byte
+      // identical to MP4 and sniffs as video unless the brand is exactly "M4A".
+      // An audio-only extension outranks that guess, otherwise the file is
+      // uploaded as video and the File API fails to process it.
+      const conflict = audioOnlyExt && sniffed.startsWith('video/');
+      if (!conflict) return sniffed;
+    }
+  }
+
+  // An audio-only extension is authoritative: keep it audio even if the bytes
+  // were ambiguous or the download came back without usable magic numbers.
+  // The extension wins over the reported type because Chat labels AAC voice
+  // notes as audio/mpeg, which misdescribes the actual codec.
+  if (audioOnlyExt) {
+    if (byExt) return byExt;
+    if (reported.startsWith('audio/')) return MIME_ALIASES[reported] || reported;
   }
 
   // 2. Remap known aliases / bare extensions reported by Drive
