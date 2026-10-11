@@ -48,7 +48,7 @@ function sniffMimeType(filePath) {
     if (buf.length >= 12 && buf.toString('latin1', 4, 8) === 'ftyp') {
       const brand = buf.toString('latin1', 8, 12).toLowerCase();
       if (brand.startsWith('heic') || brand.startsWith('heix') || brand.startsWith('mif1')) return 'image/heic';
-      if (brand.startsWith('m4a')) return 'audio/mp4';
+      if (brand.startsWith('m4a')) return 'audio/m4a';
       if (brand.startsWith('qt')) return 'video/quicktime';
       if (brand.startsWith('3g')) return 'video/3gpp';
       return 'video/mp4';
@@ -90,7 +90,7 @@ function sniffMimeType(filePath) {
 const BY_EXTENSION = {
   jfif: 'image/jpeg', jpe: 'image/jpeg', jpg: 'image/jpeg', jpeg: 'image/jpeg',
   heic: 'image/heic', heif: 'image/heif',
-  m4a: 'audio/mp4', aac: 'audio/mp4', opus: 'audio/ogg', oga: 'audio/ogg',
+  m4a: 'audio/m4a', m4b: 'audio/m4a', aac: 'audio/aac', opus: 'audio/ogg', oga: 'audio/ogg',
   mp3: 'audio/mpeg', wav: 'audio/wav',
   m4v: 'video/mp4', mov: 'video/quicktime', mkv: 'video/x-matroska', '3gp': 'video/3gpp',
   png: 'image/png', gif: 'image/gif', bmp: 'image/bmp', webp: 'image/webp',
@@ -106,9 +106,12 @@ const MIME_ALIASES = {
   'image/pjpeg': 'image/jpeg',
   'image/x-jfif': 'image/jpeg',
   'audio/mp3': 'audio/mpeg',
-  'audio/x-m4a': 'audio/mp4',
-  'audio/m4a': 'audio/mp4',
-  'audio/x-mp4': 'audio/mp4',
+  'audio/x-m4a': 'audio/m4a',
+  'audio/m4a': 'audio/m4a',
+  // Gemini rejects audio/mp4 for voice notes; the container is reported that
+  // way by Drive and Chat, but the supported name for AAC-in-MP4 is audio/m4a.
+  'audio/mp4': 'audio/m4a',
+  'audio/x-mp4': 'audio/m4a',
   'audio/x-wav': 'audio/wav',
   'audio/vnd.wave': 'audio/wav',
   'audio/wave': 'audio/wav',

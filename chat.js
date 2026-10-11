@@ -136,7 +136,10 @@ function resolveExtension(att, fallback) {
 function normalizeAudioMimeType(mimeType) {
   const type = (mimeType || '').toLowerCase();
   if (!type.startsWith('audio/')) return mimeType;
-  if (['audio/mp4', 'audio/x-m4a', 'audio/m4a', 'audio/aac'].includes(type)) return 'audio/mp4';
+  // Gemini accepts audio/m4a but not audio/mp4, which is what Chat and Drive
+// report for voice notes. AAC-in-MP4 containers must be sent as audio/m4a.
+if (['audio/mp4', 'audio/x-m4a', 'audio/m4a', 'audio/m4b'].includes(type)) return 'audio/m4a';
+  if (type === 'audio/aac' || type === 'audio/x-aac') return 'audio/aac';
   if (type === 'audio/x-wav') return 'audio/wav';
   return mimeType;
 }
