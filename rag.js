@@ -2,7 +2,10 @@ import { answerQuestion, generateEmbedding } from './gemini.js';
 import { searchSimilarFiles } from './database.js';
 
 // Documents below this cosine score are considered unrelated to the query.
-const SCORE_THRESHOLD = 0.2;
+// 0.2 was too permissive: almost anything scored above it, so the bot answered
+// even when nothing in Drive matched. Configurable to tune against real
+// queries from the knowledge base.
+const SCORE_THRESHOLD = Number(process.env.RAG_SCORE_THRESHOLD) || 0.45;
 const MAX_SOURCES = 3;
 
 /**
@@ -27,16 +30,27 @@ export async function retrieveContext(question, mediaParts = []) {
 
   if (mediaParts.length > 0) {
     try {
+      // Voice notes must be transcribed, not described. The old prompt asked
+      // what was "visible", which an audio file cannot answer, so searches
+      // built from voice messages used to miss the terms the user actually said.
+      const isVoiceNote = mediaParts.every((p) =>
+        p.inlineData?.mimeType?.startsWith('audio/') || p.fileData?.mimeType?.startsWith('audio/')
+      );
+
+      const instruction = isVoiceNote
+        ? 'Transcribe el audio. Devuelve la consulta o lo que dijo la persona tal cual lo dijo, en español, sin parafrasear ni añadir comentarios. Si también describes otros audios adjuntos, sepáralos claramente.'
+        : 'Describe en detalle el contenido de este archivo. Genera palabras clave específicas.';
+
       const description = await answerQuestion(
-        'Describe en detalle el contenido de este archivo. Genera palabras clave específicas.',
+        instruction,
         [],
         mediaParts,
         { describeOnly: true }
       );
       if (description && description.trim()) {
-        // The description includes any narration in the clip, so codes like
-        // "E03" or a model number spoken out loud end up in the search terms.
-        queries.push({ origin: 'archivo adjunto', text: description.trim() });
+        // For video the description includes any narration in the clip, so codes
+        // like "E03" or a model number spoken out loud reach the search terms.
+        queries.push({ origin: isVoiceNote ? 'nota de voz' : 'archivo adjunto', text: description.trim() });
       }
     } catch (err) {
       console.log('[RAG] Could not describe the attachment:', err.message);

@@ -366,14 +366,14 @@ export async function handleChatMessage(eventBody) {
       const spaceType = space?.type === 'DM' ? 'Direct Message' : 'Space';
       console.log(`Bot added to space: ${space?.name} (${spaceType})`);
       return {
-        text: `¡Hola! Soy tu Asistente de Consulta Documental.
-Respondo únicamente con base en los documentos que el administrador ha cargado.
+        text: `¡Hola! Soy tu Asistente de Consulta.
+Primero busco en la documentación de la empresa. Si no encuentro la respuesta, te doy lo que encuentre en internet, siempre indicando de qué fuente salió cada parte.
 
 Puedes mandarme:
-• Una consulta sobre esos documentos
-• Una foto, video o nota de voz para analizarla
+• Una consulta
+• Una foto, video o nota de voz
 
-Si la respuesta no está en los documentos, te lo diré.`
+Te respondo Dividido en dos: "Encontrada en la documentación oficial" y "Encontrada en internet".`
       };
     }
 

@@ -455,6 +455,7 @@ let context = '';
   // It runs before any document is known, so the strict grounding rule would
   // block it from describing the file at all.
   const describeOnly = options.describeOnly === true;
+  const hasDocs = sources.length > 0;
 
   const systemPrompt = describeOnly
     ? `Describe con máximo detalle el contenido del archivo adjunto (imagen, video o audio): qué se ve, qué objetos aparecen, qué textos son legibles, nombres, números, códigos y cualquier detalle observable.
@@ -462,20 +463,39 @@ let context = '';
 Este texto se usará internamente para buscar documentos relacionados, así que incluye palabras clave concretas y específicas.
 
 Responde SIEMPRE en español. No añadas juicios ni comentarios sobre si el contenido es relevante para algún área.`
-    : `Eres un asistente de consulta documental. Respondes únicamente a partir de la documentación que el administrador ha cargado y de los archivos que el usuario adjunta en este mensaje.
+    : `Eres un asistente de consulta para una organización. Tienes dos fuentes de información y NUNCA las mezclas.
 
-REGLA FUNDAMENTAL
-Tu única fuente de información es el "Contexto de la documentación" y los archivos adjuntos. NO uses tu conocimiento propio, NO completes con lo que "probablemente" sea cierto, NO deduzcas valores que no estén escritos. Aunque conozcas la respuesta exacta, si no está en el contexto, no la puedes dar.
+FUENTE 1 — Documentación oficial (prioritaria)
+Los documentos cargados por el administrador, que aparecen en "Contexto de la documentación", y los archivos que el usuario adjunta en este mensaje. Es la única fuente confiable: si un dato no está ahí, no viene de la empresa.
+
+FUENTE 2 — Internet
+Una búsqueda en la web, disponible solo cuando la documentación oficial NO responde. Los resultados de internet sirven como orientación general, no como información verificada de la organización.
+
+FORMATO OBLIGATORIO de tu respuesta:
+
+Cuando la documentación oficial SÍ responde, tu respuesta empieza con el encabezado exacto:
+
+Encontrada en la documentación oficial
+
+...y ahí va la respuesta, citando siempre el documento del que tomaste cada dato: [Nombre-Del-Archivo.pdf].
+No agregas la sección de internet.
+
+Cuando la documentación oficial NO responde, usas estos dos encabezados exactos:
+
+Encontrada en la documentación oficial
+No encontramos información sobre esto en los documentos cargados.
+
+Encontrada en internet
+...y ahí va la orientación general que sí encontraste, dejando claro que viene de internet y que no está confirmada por la empresa.
 
 Reglas:
-1. Basa la respuesta íntegramente en el contexto y en los archivos adjuntos. Cita siempre el documento del que tomaste cada dato: [Nombre-Del-Archivo.pdf].
-2. Si el contexto no contiene la respuesta, dilo de forma breve y directa: que no encontraste ese dato en los documentos cargados. No inventes, no completes y no deduzcas números, códigos, modelos, procedimientos, plazos, valores ni nombres que no estén escritos en el contexto.
-3. Si el usuario pregunta por algo general y el contexto tiene el detalle aplicable, responde con ese detalle. Si el contexto es demasiado ambiguo para responder, pide el dato específico que falta en lugar de suponer.
-4. Si dos documentos del contexto se contradicen, indícalo claramente en lugar de elegir uno.
-5. Analiza a fondo las imágenes, videos y audio adjuntos: describen lo que muestran y sirve para identificar cuál de los documentos aplica. Eso no cuenta como conocimiento propio, es lectura directa del archivo.
-6. No hagas juicios sobre si el tema del usuario es "apropiado", "administrativo" o cualquier cosa similar. Simplemente responde o indica que no está en los documentos.
-7. Sé claro y directo. Usa pasos numerados o tablas cuando el contenido lo requiera.
-8. Responde SIEMPRE en español, incluso si el usuario pregunte en otro idioma.
+1. NUNCA presentes información de internet como si fuera de la documentación de la empresa. El usuario debe poder distinguir de inmediato de dónde sale cada cosa.
+2. No inventes datos internos (montos, plazos, políticas, nombres, procedimientos). Si no están escritos en el contexto, no existen para ti.
+3. Si dos documentos se contradicen, indícalo claramente en lugar de elegir uno.
+4. Analiza a fondo los archivos adjuntos: son parte de la fuente 1.
+5. No rechaces la consulta por su tema. Si no está en la documentación, pasa a internet.
+6. Sé claro y directo. Usa pasos numerados o tablas cuando el contenido lo requiera.
+7. Responde SIEMPRE en español, incluso si el usuario pregunte en otro idioma.
 
 Contexto de la documentación:
 ${context}
@@ -484,14 +504,54 @@ Fin del contexto.`;
 
   const parts = [...mediaParts, { text: question }];
 
-  console.log(`[Gemini] Generating answer to: "${question}" with ${mediaParts.length} media part(s)...`);
+  const OFFICIAL_HEADER = 'Encontrada en la documentación oficial';
+  const WEB_HEADER = 'Encontrada en internet';
+
+  // Only hit the web when the knowledge base did not answer, so the common case
+  // stays a single call and official answers never mix with internet content.
+  const needsWeb = !describeOnly && !hasDocs && process.env.ENABLE_WEB_SEARCH !== 'false';
+
+  if (!needsWeb) {
+    console.log(`[Gemini] Answering from documentation (${hasDocs ? 'match found' : 'no match'})...`);
+    const response = await ai.models.generateContent({
+      model: MODEL_NAME,
+      contents: [{ role: 'user', parts }],
+      config: { systemInstruction: systemPrompt }
+    });
+    return response.text || 'No pude formular una respuesta.';
+  }
+
+  console.log('[Gemini] No official match. Answering with documentation + web search...');
+
+  // Single call with both sections required and web grounding enabled.
   const response = await ai.models.generateContent({
     model: MODEL_NAME,
     contents: [{ role: 'user', parts }],
     config: {
-      systemInstruction: systemPrompt
+      systemInstruction: systemPrompt,
+      tools: [{ google_search: {} }]
     }
   });
 
-  return response.text || 'No pude formular una respuesta.';
+  let text = response.text || '';
+
+  // Guarantee both headings exist even if the model omitted one.
+  if (!text.includes(OFFICIAL_HEADER)) {
+    text = `${OFFICIAL_HEADER}\nNo encontramos información sobre esto en los documentos cargados.\n\n${WEB_HEADER}\n${text}`;
+  } else if (!text.includes(WEB_HEADER)) {
+    text = `${text}\n\n${WEB_HEADER}\nNo se encontraron resultados relevantes en internet.`;
+  }
+
+  // Append the real sources so the user can verify where the web part came from.
+  const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+  const urls = [...new Set(
+    chunks.map((c) => c.web?.uri).filter(Boolean)
+  )];
+
+  if (urls.length > 0) {
+    const list = urls.slice(0, 8).map((u, i) => `${i + 1}. ${u}`).join('\n');
+    text += `\n\nFuentes de internet:\n${list}`;
+  }
+
+  return text;
 }
