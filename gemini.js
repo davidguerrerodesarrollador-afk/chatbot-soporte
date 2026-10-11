@@ -409,23 +409,33 @@ export async function prepareMediaPart(localFilePath, mimeType, declaredKind = n
   const fileName = localFilePath.split(/[\\/]/).pop() || '';
   mimeType = normalizeMimeType(mimeType, fileName, localFilePath, declaredKind);
 
-  // Images: send as inline base64 data
-  if (mimeType.startsWith('image/')) {
-    const buffer = fs.readFileSync(localFilePath);
-    const base64 = buffer.toString('base64');
-    return { inlineData: { mimeType, data: base64 } };
+  const size = fs.statSync(localFilePath).size;
+  if (size === 0) {
+    throw new Error('El archivo se descargó vacío. Vuelve a intentarlo.');
   }
 
-  // Audio (e.g. Chat voice messages): inline when small to skip the File API round-trip
-  if (mimeType.startsWith('audio/')) {
-    const buffer = fs.readFileSync(localFilePath);
-    if (buffer.length <= 15 * 1024 * 1024) {
-      return { inlineData: { mimeType, data: buffer.toString('base64') } };
+  // Inline requests carry the whole payload, base64-encoded, inside a single
+  // HTTP request. Gemini caps those at ~20MB, and base64 inflates by ~33%, so
+  // anything above this has to go through the File API instead.
+  const INLINE_LIMIT = 12 * 1024 * 1024;
+
+  // Images: inline when small enough, otherwise via the File API
+  if (mimeType.startsWith('image/')) {
+    if (size <= INLINE_LIMIT) {
+      const base64 = fs.readFileSync(localFilePath).toString('base64');
+      return { inlineData: { mimeType, data: base64 } };
     }
   }
 
-  // Videos and large audio files: upload to File API and reference by URI.
+  // Audio (e.g. Chat voice messages): inline when small to skip the File API round-trip
+  if (mimeType.startsWith('audio/') && size <= INLINE_LIMIT) {
+    const base64 = fs.readFileSync(localFilePath).toString('base64');
+    return { inlineData: { mimeType, data: base64 } };
+  }
+
+  // Videos and large files: upload to File API and reference by URI.
   // mimeType must live inside `config` or the SDK ignores it.
+  console.log(`[Gemini] Uploading "${fileName}" (${mimeType}, ${(size / 1024 / 1024).toFixed(1)} MB) to File API...`);
   const uploadResult = await ai.files.upload({
     file: localFilePath,
     config: { mimeType }
@@ -433,13 +443,20 @@ export async function prepareMediaPart(localFilePath, mimeType, declaredKind = n
 
   let fileState = await ai.files.get({ name: uploadResult.name });
   let attempts = 0;
-  while (fileState.state === 'PROCESSING' && attempts < 20) {
+  // Media can take a while to process; a long clip needs more headroom than the
+  // 30s Chat webhook allows, so wait generously and only then give up.
+  const MAX_ATTEMPTS = 60;
+  while (fileState.state === 'PROCESSING' && attempts < MAX_ATTEMPTS) {
     attempts++;
     await new Promise((resolve) => setTimeout(resolve, 5000));
     fileState = await ai.files.get({ name: uploadResult.name });
   }
+
   if (fileState.state !== 'ACTIVE') {
-    throw new Error(`Gemini File API processing failed with state: ${fileState.state}`);
+    throw new Error(
+      `Gemini no pudo procesar el archivo (estado: ${fileState.state}). ` +
+      `Suele ocurrir con clips muy largos; prueba con un video más corto.`
+    );
   }
 
   return { fileData: { fileUri: uploadResult.uri, mimeType } };
